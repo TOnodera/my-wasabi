@@ -1,5 +1,26 @@
 #![no_std]
 #![no_main]
+#![feature(offset_of)]
+
+use core::mem::size_of;
+use core::mem::offset_of;
+
+#[cfg(not(test))]
+use core::panic::PanicInfo;
+
+use core::ptr::null_mut;
+use core::slice;
+
+type EfiVoid = u8;
+type EfiHandle = u64;
+type Result<T> = core::result::Result<T, &'static str>;
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+#[must_use]
+#[repr(u64)]
+enum EfiStatus {
+    Success = 0,
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,7 +50,7 @@ struct EfiGraphicsOutputProtocol<'a> {
 struct EfiGraphicsOutputProtocolMode<'a> {
     pub max_mode: u32,
     pub mode: u32,
-    pub info: &'a EfiGraphicsOutputProtocolModeInfo,
+    pub info: &'a EfiGraphicsOutputProtocolPixelInfo,
     pub size_of_info: usize,
     pub frame_buffer_base: u64,
     pub frame_buffer_size: usize,
@@ -46,6 +67,23 @@ struct EfiGraphicsOutputProtocolModeInfo {
 }
 
 const _: () = assert!(size_of::<EfiGraphicsOutputProtocolModeInfo>() == 36);
+
+#[repr(C)]
+struct EfiSystemTable {
+    _reserved0: [u64; 12],
+    pub boot_services: EfiBootServicesTable,
+}
+const _: () = assert!(offset_of!(EfiSystemTable, boot_services) == 96);
+
+#[repr(C)]
+#[derive(Debug)]
+struct EfiGraphicsOutputProtocolPixelInfo {
+    version : u32,
+    pub horizontal_resolution: u32,
+    pub vertical_resolution: u32,
+    _padding0: [u32; 5],
+    pub pixels_per_scan_line: u32,
+}
 
 fn locate_graphic_protocol<'a>(efi_system_table: &'a EfiSystemTable) -> Result<&'a EfiGraphicsOutputProtocol<'a>> {
     let mut graphics_output_protocol = null_mut::<EfiGraphicsOutputProtocol>(); 
@@ -71,7 +109,7 @@ fn efi_main(_image_handle: EfiHandle, _efi_system_table: &EfiSystemTable) {
     let vram_addr = efi_graphics_output_protocol.mode.frame_buffer_base;
     let vram_byte_size = efi_graphics_output_protocol.mode.frame_buffer_size;
     let vram = unsafe {
-        slice::from_raw_parts(vram_addr as *mut u32, vram_byte_size / size_of::<u32>());
+        slice::from_raw_parts(vram_addr as *mut u32, vram_byte_size / size_of::<u32>())
     };
     
     for e in vram {
@@ -81,9 +119,7 @@ fn efi_main(_image_handle: EfiHandle, _efi_system_table: &EfiSystemTable) {
     loop {}
 }
 
-use::core::panic::PanicInfo;
-use core::{intrinsics::offset, mem::offset_of, slice};
-
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
