@@ -37,26 +37,26 @@ enum EfiStatus {
 }
 
 #[repr(C)]
-struct EfiBootServiceTable {
-    _reversed0: [u64; 40],
+struct EfiBootServicesTable {
+    _reserved0: [u64; 40],
     locate_protocol: extern "win64" fn(
         protocol: *const EfiGuid,
         registration: *const EfiVoid,
         interface: *mut *mut EfiVoid,
     ) -> EfiStatus,
 }
-const _: () = assert!(offset_of!(EfiBootServiceTable, locate_protocol) == 320);
+const _: () = assert!(offset_of!(EfiBootServicesTable, locate_protocol) == 320);
 
 #[repr(C)]
 struct EfiSystemTable {
-    _reversed0: [u64; 12],
-    pub boot_services: &'static EfiBootServiceTable,
+    _reserved0: [u64; 12],
+    pub boot_services: &'static EfiBootServicesTable,
 }
 const _: () = assert!(offset_of!(EfiSystemTable, boot_services) == 96);
 
 #[repr(C)]
 #[derive(Debug)]
-struct EfiGraphicsOutputProtocolPixelInfo{
+struct EfiGraphicsOutputProtocolPixelInfo {
     version: u32,
     pub horizontal_resolution: u32,
     pub vertical_resolution: u32,
@@ -65,13 +65,13 @@ struct EfiGraphicsOutputProtocolPixelInfo{
 }
 const _: () = assert!(size_of::<EfiGraphicsOutputProtocolPixelInfo>() == 36);
 
-
 #[repr(C)]
 #[derive(Debug)]
-struct EfiGraphicsOutputProtocolPixelMode<'a> {
+struct EfiGraphicsOutputProtocolMode<'a> {
     pub max_mode: u32,
     pub mode: u32,
     pub info: &'a EfiGraphicsOutputProtocolPixelInfo,
+    pub size_of_info: u64,
     pub frame_buffer_base: usize,
     pub frame_buffer_size: usize,
 }
@@ -80,27 +80,28 @@ struct EfiGraphicsOutputProtocolPixelMode<'a> {
 #[derive(Debug)]
 struct EfiGraphicsOutputProtocol<'a> {
     reserved: [u64; 3],
-    pub mode: &'a EfiGraphicsOutputProtocolPixelMode<'a>,
+    pub mode: &'a EfiGraphicsOutputProtocolMode<'a>,
 }
-
-fn locate_graphics_protocol<'a>(
+fn locate_graphic_protocol<'a>(
     efi_system_table: &EfiSystemTable,
 ) -> Result<&'a EfiGraphicsOutputProtocol<'a>> {
-    let mut graphics_output_protocol = null_mut::<EfiGraphicsOutputProtocol>();
+    let mut graphic_output_protocol = null_mut::<EfiGraphicsOutputProtocol>();
     let status = (efi_system_table.boot_services.locate_protocol)(
         &EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID,
         null_mut::<EfiVoid>(),
-        &mut graphics_output_protocol as *mut *mut EfiGraphicsOutputProtocol as *mut *mut EfiVoid,
+        &mut graphic_output_protocol as *mut *mut EfiGraphicsOutputProtocol
+            as *mut *mut EfiVoid,
     );
     if status != EfiStatus::Success {
         return Err("Failed to locate graphics protocol");
     }
-    Ok(unsafe { &*graphics_output_protocol })
+    Ok(unsafe { &*graphic_output_protocol })
 }
 
 #[no_mangle]
 fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
-    let efi_graphics_output_protocol = locate_graphics_protocol(efi_system_table).unwrap();
+    let efi_graphics_output_protocol =
+        locate_graphic_protocol(efi_system_table).unwrap();
     let vram_addr = efi_graphics_output_protocol.mode.frame_buffer_base;
     let vram_byte_size = efi_graphics_output_protocol.mode.frame_buffer_size;
     let vram = unsafe {
@@ -110,13 +111,12 @@ fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     };
     
     for e in vram {
-        *e = 0xffffff; 
+        *e = 0xffffffff;
     }
     
     loop {}
 }
 
-#[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
     loop {}
