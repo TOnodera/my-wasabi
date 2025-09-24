@@ -2,12 +2,12 @@
 #![no_main]
 #![feature(offset_of)]
 
+use core::arch::asm;
 use core::mem::offset_of;
 use core::mem::size_of;
 use core::panic::PanicInfo;
 use core::ptr::null_mut;
 use core::slice;
-
 
 type EfiVoid = u8;
 type EfiHandle = u64;
@@ -33,7 +33,7 @@ const EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID: EfiGuid = EfiGuid {
 #[must_use]
 #[repr(u64)]
 enum EfiStatus {
-    Success = 0
+    Success = 0,
 }
 
 #[repr(C)]
@@ -89,8 +89,7 @@ fn locate_graphic_protocol<'a>(
     let status = (efi_system_table.boot_services.locate_protocol)(
         &EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID,
         null_mut::<EfiVoid>(),
-        &mut graphic_output_protocol as *mut *mut EfiGraphicsOutputProtocol
-            as *mut *mut EfiVoid,
+        &mut graphic_output_protocol as *mut *mut EfiGraphicsOutputProtocol as *mut *mut EfiVoid,
     );
     if status != EfiStatus::Success {
         return Err("Failed to locate graphics protocol");
@@ -100,24 +99,29 @@ fn locate_graphic_protocol<'a>(
 
 #[no_mangle]
 fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
-    let efi_graphics_output_protocol =
-        locate_graphic_protocol(efi_system_table).unwrap();
+    let efi_graphics_output_protocol = locate_graphic_protocol(efi_system_table).unwrap();
     let vram_addr = efi_graphics_output_protocol.mode.frame_buffer_base;
     let vram_byte_size = efi_graphics_output_protocol.mode.frame_buffer_size;
     let vram = unsafe {
-        slice::from_raw_parts_mut(vram_addr as *mut u32,
-                                  vram_byte_size / size_of::<u32>()
-        )
+        slice::from_raw_parts_mut(vram_addr as *mut u32, vram_byte_size / size_of::<u32>())
     };
-    
+
     for e in vram {
         *e = 0xffffffff;
     }
-    
-    loop {}
+
+    loop {
+        hlt()
+    }
+}
+
+pub fn hlt() {
+    unsafe { asm!("hlt") }
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+    loop {
+        hlt()
+    }
 }
