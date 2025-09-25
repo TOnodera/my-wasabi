@@ -193,7 +193,7 @@ fn init_vram(efi_system_table: &EfiSystemTable) -> Result<VramBufferInfo> {
 }
 
 unsafe fn unchecked_draw_point<T: Bitmap>(buf: &mut T, color: u32, x: i64, y: i64) {
-    *buf.unchecked_pixel_at_mut(x, y) = color;
+    *buf.unchecked_pixel_mut(x, y) = color;
 }
 
 fn draw_point<T: Bitmap>(buf: &mut T, color: u32, x: i64, y: i64) -> Result<()> {
