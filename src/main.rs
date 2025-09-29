@@ -262,18 +262,16 @@ fn draw_line<T: Bitmap>(buf: &mut T, color: u32, x0: i64, y0: i64, x1: i64, y1: 
     let dy = (y1 - y0).abs();
     let sy = (y1 - y0).signum(); // 1 or -1
     if dx >= dy {
-        for (rx, ry) in (0..dx)
-            .flat_map(|rx| calc_slope_point(dx, dy, rx))
-            .map(|ry| (rx, ry))
-        {
-            draw_point(buf, color, x0 + rx * sx, y0 + ry * sy)?;
+        for rx in 0..dx {
+            for ry in calc_slope_point(dx, dy, rx) {
+                draw_point(buf, color, x0 + rx * sx, y0 + ry * sy)?;
+            }
         }
     } else {
-        for (rx, ry) in (0..dy)
-            .flat_map(|ry| calc_slope_point(dy, dx, ry))
-            .map(|rx| (rx, ry))
-        {
-            draw_point(buf, color, x0 + rx * sx, y0 + ry * sy)?;
+        for ry in 0..dy {
+            for rx in calc_slope_point(dy, dx, ry) {
+                draw_point(buf, color, x0 + rx * sx, y0 + ry * sy)?;
+            }
         }
     }
 
