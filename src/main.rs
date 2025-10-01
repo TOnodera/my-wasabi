@@ -5,6 +5,7 @@
 use core::arch::asm;
 use core::cmp::min;
 use core::fmt;
+use core::fmt::write;
 use core::fmt::Write;
 use core::mem::offset_of;
 use core::mem::size_of;
@@ -124,7 +125,9 @@ struct EfiBootServicesTable {
         descriptor_size: *mut usize,
         descriptor_version: *mut u32,
     ) -> EfiStatus,
-    _reserved1: [u64; 32],
+    _reserved1: [u64; 21],
+    exit_boot_services: extern "win64" fn(image_handle: EfiHandle, map_key: usize) -> EfiStatus,
+    _reserved4: [u64; 10],
     locate_protocol: extern "win64" fn(
         protocol: *const EfiGuid,
         registration: *const EfiVoid,
@@ -144,6 +147,7 @@ impl EfiBootServicesTable {
     }
 }
 const _: () = assert!(offset_of!(EfiBootServicesTable, get_memory_map) == 56);
+const _: () = assert!(offset_of!(EfiBootServicesTable, exit_boot_services) == 232);
 const _: () = assert!(offset_of!(EfiBootServicesTable, locate_protocol) == 320);
 
 #[repr(C)]
@@ -197,7 +201,7 @@ fn locate_graphic_protocol<'a>(
 }
 
 #[no_mangle]
-fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
+fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     let mut vram = init_vram(efi_system_table).expect("Failed to initialize VRAM");
 
     let vw = vram.width;
@@ -229,6 +233,9 @@ fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
         "Total: {total_memory_pages} pages = {total_memory_size_mib} MiB"
     )
     .unwrap();
+
+    exit_from_efi_services(image_handle, efi_system_table, &mut memory_map);
+    writeln!(w, "Hello, Non-EFI World!").unwrap();
 
     loop {
         hlt()
@@ -477,4 +484,19 @@ fn draw_test_pattern<T: Bitmap>(buf: &mut T) {
     }
     draw_str_fg(buf, left, h * colors.len() as i64, 0x00ff00, "0123456789");
     draw_str_fg(buf, left, h * colors.len() as i64 + 16, 0x00ff00, "ABCDEF");
+}
+
+fn exit_from_efi_services(
+    image_handle: EfiHandle,
+    efi_system_table: &EfiSystemTable,
+    memory_map: &MemoryMapHolder,
+) {
+    loop {
+        let status =
+            (efi_system_table.boot_services.exit_boot_services)(image_handle, memory_map.map_key);
+        assert_eq!(status, EfiStatus::Success);
+        if status == EfiStatus::Success {
+            break;
+        }
+    }
 }
