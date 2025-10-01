@@ -48,6 +48,8 @@ pub enum EfiMemoryType {
     LOADER_DATA,
     BOOT_SERVICES_CODE,
     BOOT_SERVICES_DATA,
+    RUNTIME_SERVICES_CODE,
+    RUNTIME_SERVICES_DATA,
     CONVENTIONAL_MEMORY,
     UNUSABLE_MEMORY,
     ACPI_RECLAIM_MEMORY,
@@ -84,7 +86,7 @@ struct MemoryMapIterator<'a> {
 }
 impl<'a> Iterator for MemoryMapIterator<'a> {
     type Item = &'a EfiMemoryDescriptor;
-    fn next(&mut self) -> Option<Self::Item> {
+    fn next(&mut self) -> Option<&'a EfiMemoryDescriptor> {
         if self.ofs >= self.map.memory_map_size {
             None
         } else {
@@ -117,7 +119,7 @@ struct EfiBootServicesTable {
     _reserved0: [u64; 7],
     get_memory_map: extern "win64" fn(
         memory_map_size: *mut usize,
-        memory_map: *mut EfiVoid,
+        memory_map: *mut u8,
         map_key: *mut usize,
         descriptor_size: *mut usize,
         descriptor_version: *mut u32,
@@ -241,9 +243,20 @@ fn efi_main(_image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
         .boot_services
         .get_memory_map(&mut memory_map);
     writeln!(w, "{status:?}").unwrap();
+    let mut total_memory_pages = 0;
     for e in memory_map.iter() {
+        if e.memory_type != EfiMemoryType::CONVENTIONAL_MEMORY {
+            continue;
+        }
+        total_memory_pages += e.number_of_pages;
         writeln!(w, "{e:?}").unwrap();
     }
+    let total_memory_size_mib = total_memory_pages * 4096 / 1024 / 1024;
+    writeln!(
+        w,
+        "Total: {total_memory_pages} pages = {total_memory_size_mib} MiB"
+    )
+    .unwrap();
 
     loop {
         hlt()
