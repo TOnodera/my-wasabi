@@ -5,6 +5,9 @@ use core::arch::asm;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::writeln;
+use wasabi::qemu::exit_qemu;
+use wasabi::qemu::QemuExitCode;
+use wasabi::x86::hlt;
 
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::uefi::{
@@ -60,7 +63,5 @@ pub fn hlt() {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    loop {
-        hlt()
-    }
+    exit_qemu(QemuExitCode::Failed)
 }
