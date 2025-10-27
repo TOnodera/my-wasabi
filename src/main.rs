@@ -2,10 +2,11 @@
 #![no_main]
 
 use core::arch::asm;
+use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::writeln;
 
-use wasabi::graphics::{draw_test_pattern, fill_rect};
+use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::uefi::{
     exit_from_efi_services, init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, MemoryMapHolder,
     VramTextWriter,
@@ -22,7 +23,7 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     draw_test_pattern(&mut vram);
     let mut w = VramTextWriter::new(&mut vram);
     for i in 0..4 {
-        writeln!(w, "i = {i}").unwrap();
+        writeln!(w, "i = {i:?}").unwrap();
     }
 
     let mut memory_map = MemoryMapHolder::new();
