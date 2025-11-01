@@ -58,7 +58,7 @@ pub enum EfiMemoryType {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EfiMemoryDescriptor {
     memory_type: EfiMemoryType,
-    phisical_start: u64,
+    physical_start: u64,
     virtual_start: u64,
     number_of_pages: u64,
     attribute: u64,
@@ -69,6 +69,9 @@ impl EfiMemoryDescriptor {
     }
     pub fn number_of_pages(&self) -> u64 {
         self.number_of_pages
+    }
+    pub fn physical_start(&self) -> u64 {
+        self.physical_start
     }
 }
 

@@ -57,9 +57,6 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     }
 }
 
-pub fn hlt() {
-    unsafe { asm!("hlt") }
-}
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
