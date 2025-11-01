@@ -177,3 +177,8 @@ impl FirstFitAllocator {
         header.as_mut().unwrap().next_header = prev_last;
     }
 }
+
+#[test_case]
+fn round_up_to_nearest_pow2_tests() {
+    unimplemented!();
+}

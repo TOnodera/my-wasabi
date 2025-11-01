@@ -7,6 +7,7 @@ use core::panic::PanicInfo;
 use core::writeln;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
+use wasabi::serial::SerialPort;
 use wasabi::x86::hlt;
 
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
@@ -17,6 +18,8 @@ use wasabi::uefi::{
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
+    let mut sw = SerialPort::new_for_com1();
+    writeln!(sw, "Hello, via Serial!").unwrap();
     let mut vram = init_vram(efi_system_table).expect("Failed to initialize VRAM");
 
     let vw = vram.width();
@@ -56,7 +59,6 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
         hlt()
     }
 }
-
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
