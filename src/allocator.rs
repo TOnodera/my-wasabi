@@ -180,5 +180,14 @@ impl FirstFitAllocator {
 
 #[test_case]
 fn round_up_to_nearest_pow2_tests() {
-    unimplemented!();
+    assert_eq!(round_up_to_nearest_pow2(0), Err("Out of range"));
+    assert_eq!(round_up_to_nearest_pow2(1), Ok(1));
+    assert_eq!(round_up_to_nearest_pow2(2), Ok(2));
+    assert_eq!(round_up_to_nearest_pow2(3), Ok(4));
+    assert_eq!(round_up_to_nearest_pow2(4), Ok(4));
+    assert_eq!(round_up_to_nearest_pow2(5), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(6), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(7), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(8), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(9), Ok(16));
 }
