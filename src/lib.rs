@@ -21,5 +21,5 @@ fn efi_main(image_handle: uefi::EfiHandle, efi_system_table: &uefi::EfiSystemTab
     let mut memory_map = uefi::MemoryMapHolder::new();
     uefi::exit_from_efi_services(image_handle, efi_system_table, &mut memory_map);
     allocator::ALLOCATOR.init_with_mmap(&memory_map);
-    run_unit_tests();
+    run_unit_tests()
 }

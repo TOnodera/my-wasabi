@@ -73,7 +73,7 @@ impl Header {
         size_used += header_for_allocated.size;
         header_for_allocated.next_header = self.next_header.take();
 
-        if (header_for_allocated.end_addr() != self.end_addr()) {
+        if header_for_allocated.end_addr() != self.end_addr() {
             let mut header_for_padding =
                 unsafe { Self::new_from_addr(header_for_allocated.end_addr()) };
             header_for_padding.is_allocated = false;
@@ -178,7 +178,6 @@ impl FirstFitAllocator {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,7 +321,6 @@ mod tests {
         }
     }
 }
-*/
 
 #[test_case]
 fn round_up_to_nearest_pow2_tests() {
