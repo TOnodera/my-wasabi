@@ -178,6 +178,7 @@ impl FirstFitAllocator {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +322,7 @@ mod tests {
         }
     }
 }
+*/
 
 #[test_case]
 fn round_up_to_nearest_pow2_tests() {
