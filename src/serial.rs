@@ -18,8 +18,9 @@ impl SerialPort {
         write_io_port_u8(self.base + 3, 0x80);
 
         const BAUD_DIVISOR: u16 = 0x0001;
-        write_io_port_u8(self.base, (BAUD_DIVISOR & 0x00FF) as u8);
-        write_io_port_u8(self.base + 1, ((BAUD_DIVISOR >> 8) & 8) as u8);
+
+        write_io_port_u8(self.base, (BAUD_DIVISOR & 0xFF) as u8);
+        write_io_port_u8(self.base + 1, (BAUD_DIVISOR >> 8) as u8);
         write_io_port_u8(self.base + 3, 0x03);
         write_io_port_u8(self.base + 2, 0xC7);
         write_io_port_u8(self.base + 4, 0x0B);
@@ -41,12 +42,13 @@ impl SerialPort {
 
 impl fmt::Write for SerialPort {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.send_str(s);
+        let serial = Self::default();
+        serial.send_str(s);
         Ok(())
     }
 }
 impl Default for SerialPort {
     fn default() -> Self {
-        SerialPort::new_for_com1()
+        Self::new_for_com1()
     }
 }

@@ -9,7 +9,7 @@ pub fn busy_loop_hint() {
 }
 
 pub fn read_io_port_u8(port: u16) -> u8 {
-    let data: u8;
+    let mut data: u8;
     unsafe {
         asm!("in al, dx",
             out("al") data,

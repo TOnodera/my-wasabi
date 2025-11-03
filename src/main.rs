@@ -16,7 +16,6 @@ use wasabi::uefi::{
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
-
     let mut vram = init_vram(efi_system_table).expect("Failed to initialize VRAM");
     let vw = vram.width();
     let vh = vram.height();
