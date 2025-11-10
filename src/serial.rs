@@ -11,7 +11,7 @@ impl SerialPort {
         SerialPort { base }
     }
     pub fn new_for_com1() -> Self {
-        SerialPort::new(0x3F8)
+        SerialPort::new(0x3f8)
     }
     pub fn init(&mut self) {
         write_io_port_u8(self.base + 1, 0x00);
@@ -19,7 +19,7 @@ impl SerialPort {
 
         const BAUD_DIVISOR: u16 = 0x0001;
 
-        write_io_port_u8(self.base, (BAUD_DIVISOR & 0xFF) as u8);
+        write_io_port_u8(self.base, (BAUD_DIVISOR & 0xff) as u8);
         write_io_port_u8(self.base + 1, (BAUD_DIVISOR >> 8) as u8);
         write_io_port_u8(self.base + 3, 0x03);
         write_io_port_u8(self.base + 2, 0xC7);

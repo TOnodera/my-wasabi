@@ -1,16 +1,17 @@
+extern crate alloc;
+
 use crate::result::Result;
 use crate::uefi::{EfiMemoryDescriptor, EfiMemoryType, MemoryMapHolder};
+use alloc::alloc::GlobalAlloc;
+use alloc::alloc::Layout;
 use alloc::boxed::Box;
-use core::alloc::GlobalAlloc;
 use core::borrow::BorrowMut;
 use core::cell::RefCell;
 use core::cmp::max;
 use core::fmt;
+use core::mem::size_of;
 use core::ops::DerefMut;
 use core::ptr::null_mut;
-use core::{alloc::Layout, mem::size_of};
-
-extern crate alloc;
 
 // vを超えない最小の2のべき乗を返す。
 pub fn round_up_to_nearest_pow2(v: usize) -> Result<usize> {
@@ -29,9 +30,10 @@ const HEADER_SIZE: usize = size_of::<Header>();
 
 // HEADER_SIZEが2のべき乗であることを確認する。
 #[allow(clippy::assertions_on_constants)]
+const _: () = assert!(HEADER_SIZE == 32);
 const _: () = assert!(HEADER_SIZE.count_ones() == 1);
 
-pub const LAYOUT_PAGE_4K: Layout = { unsafe { Layout::from_size_align_unchecked(4096, 4096) } };
+pub const LAYOUT_PAGE_4K: Layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
 
 impl Header {
     fn can_provide(&self, size: usize, align: usize) -> bool {
@@ -51,7 +53,7 @@ impl Header {
             is_allocated: false,
             _reserved: 0,
         });
-        Box::from_raw(header)
+        Box::from_raw(addr as *mut Header)
     }
     unsafe fn from_allocated_region(addr: *mut u8) -> Box<Header> {
         let header = addr.sub(HEADER_SIZE) as *mut Header;
@@ -97,7 +99,7 @@ impl Drop for Header {
 }
 
 impl fmt::Debug for Header {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
             "Header @ {:#018X} {{ size: {:018X}, is_allocated: {}}}",
@@ -121,7 +123,7 @@ unsafe impl GlobalAlloc for FirstFitAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         self.alloc_with_options(layout)
     }
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         let mut region = Header::from_allocated_region(ptr);
         region.is_allocated = false;
         Box::leak(region);
@@ -142,7 +144,9 @@ impl FirstFitAllocator {
                         continue;
                     }
                 },
-                None => break null_mut::<u8>(),
+                None => {
+                    break null_mut::<u8>();
+                }
             }
         }
     }

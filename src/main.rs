@@ -4,15 +4,14 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::writeln;
+use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
-use wasabi::x86::hlt;
-
-use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::uefi::{
     exit_from_efi_services, init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, MemoryMapHolder,
     VramTextWriter,
 };
+use wasabi::x86::hlt;
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
@@ -57,5 +56,5 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    exit_qemu(QemuExitCode::Failed)
+    exit_qemu(QemuExitCode::Failed);
 }
