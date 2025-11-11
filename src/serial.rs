@@ -29,7 +29,7 @@ impl SerialPort {
         while (read_io_port_u8(self.base + 5) & 0x20) == 0 {
             busy_loop_hint();
         }
-        write_io_port_u8(self.base, c as u8);
+        write_io_port_u8(self.base, c as u8)
     }
     pub fn send_str(&self, s: &str) {
         let mut sc = s.chars();

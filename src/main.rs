@@ -56,5 +56,5 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    exit_qemu(QemuExitCode::Failed);
+    exit_qemu(QemuExitCode::Failed)
 }

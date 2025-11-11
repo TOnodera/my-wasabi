@@ -33,5 +33,5 @@ pub fn test_runner(tests: &[&dyn Testable]) -> ! {
 fn panic(info: &PanicInfo) -> ! {
     let mut sw = SerialPort::new_for_com1();
     writeln!(sw, "PANIC during test: {info:?}").unwrap();
-    exit_qemu(QemuExitCode::Failed)
+    exit_qemu(QemuExitCode::Failed);
 }

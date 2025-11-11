@@ -19,6 +19,19 @@ pub fn round_up_to_nearest_pow2(v: usize) -> Result<usize> {
         .checked_shl(usize::BITS - v.wrapping_sub(1).leading_zeros())
         .ok_or("Out of range")
 }
+#[test_case]
+fn round_up_to_nearest_pow2_tests() {
+    assert_eq!(round_up_to_nearest_pow2(0), Err("Out of range"));
+    assert_eq!(round_up_to_nearest_pow2(1), Ok(1));
+    assert_eq!(round_up_to_nearest_pow2(2), Ok(2));
+    assert_eq!(round_up_to_nearest_pow2(3), Ok(4));
+    assert_eq!(round_up_to_nearest_pow2(4), Ok(4));
+    assert_eq!(round_up_to_nearest_pow2(5), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(6), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(7), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(8), Ok(8));
+    assert_eq!(round_up_to_nearest_pow2(9), Ok(16));
+}
 
 struct Header {
     next_header: Option<Box<Header>>,
@@ -103,7 +116,9 @@ impl fmt::Debug for Header {
         write!(
             f,
             "Header @ {:#018X} {{ size: {:018X}, is_allocated: {}}}",
-            self as *const Header as usize, self.size, self.is_allocated,
+            self as *const Header as usize,
+            self.size,
+            self.is_allocated(),
         )
     }
 }
@@ -188,7 +203,7 @@ mod test {
     use alloc::vec;
 
     #[test_case]
-    fn malloc_itrate_free_and_alloc() {
+    fn malloc_iterate_free_and_alloc() {
         use alloc::vec::Vec;
 
         for i in 0..1000 {
@@ -206,7 +221,7 @@ mod test {
                     Layout::from_size_align(1234, align).expect("Failed to create Layout"),
                 );
                 assert!(*e as usize != 0);
-                assert!(*e as usize % align == 0);
+                assert!((*e as usize) % align == 0);
             }
         }
     }
@@ -220,7 +235,7 @@ mod test {
                     Layout::from_size_align(1234, align).expect("Failed to create Layout"),
                 );
                 assert!(*e as usize != 0);
-                assert!(*e as usize % align == 0);
+                assert!((*e as usize) % align == 0);
             }
         }
     }
@@ -232,11 +247,10 @@ mod test {
             Layout::from_size_align(32, 32).unwrap(),
             Layout::from_size_align(8, 8).unwrap(),
             Layout::from_size_align(16, 16).unwrap(),
-            Layout::from_size_align(16, 16).unwrap(),
             Layout::from_size_align(6000, 64).unwrap(),
             Layout::from_size_align(4, 4).unwrap(),
             Layout::from_size_align(2, 2).unwrap(),
-            Layout::from_size_align(60000, 64).unwrap(),
+            Layout::from_size_align(600000, 64).unwrap(),
             Layout::from_size_align(64, 64).unwrap(),
             Layout::from_size_align(1, 1).unwrap(),
             Layout::from_size_align(6000, 64).unwrap(),
@@ -269,38 +283,34 @@ mod test {
             let (i, (layout, pointer)) = e;
             *pointer = ALLOCATOR.alloc_with_options(*layout);
             for k in 0..layout.size() {
-                unsafe {
-                    *pointer.add(k) = i as u8;
-                }
+                unsafe { *pointer.add(k) = i as u8 }
             }
         }
-        for e in allocations.iter().zip(pointers.iter()).enumerate() {
+        for e in allocations.iter().zip(pointers.iter_mut()).enumerate() {
             let (i, (layout, pointer)) = e;
             for k in 0..layout.size() {
-                assert!(unsafe { *pointer.add(k) == i as u8 });
+                assert!(unsafe { *pointer.add(k) } == i as u8);
             }
         }
         for e in allocations
             .iter()
-            .zip(pointers.iter())
+            .zip(pointers.iter_mut())
             .enumerate()
             .step_by(2)
         {
             let (_, (layout, pointer)) = e;
-            unsafe {
-                ALLOCATOR.dealloc(*pointer, *layout);
-            }
+            unsafe { ALLOCATOR.dealloc(*pointer, *layout) }
         }
         for e in allocations
             .iter()
-            .zip(pointers.iter())
+            .zip(pointers.iter_mut())
             .enumerate()
             .skip(1)
             .step_by(2)
         {
             let (i, (layout, pointer)) = e;
             for k in 0..layout.size() {
-                assert!(unsafe { *pointer.add(k) == i as u8 });
+                assert!(unsafe { *pointer.add(k) } == i as u8);
             }
         }
         for e in allocations
@@ -312,30 +322,14 @@ mod test {
             let (i, (layout, pointer)) = e;
             *pointer = ALLOCATOR.alloc_with_options(*layout);
             for k in 0..layout.size() {
-                unsafe {
-                    *pointer.add(k) = i as u8;
-                }
+                unsafe { *pointer.add(k) = i as u8 }
             }
         }
-        for e in allocations.iter().zip(pointers.iter()).enumerate() {
+        for e in allocations.iter().zip(pointers.iter_mut()).enumerate() {
             let (i, (layout, pointer)) = e;
             for k in 0..layout.size() {
-                assert!(unsafe { *pointer.add(k) == i as u8 });
+                assert!(unsafe { *pointer.add(k) } == i as u8);
             }
         }
-    }
-
-    #[test_case]
-    fn round_up_to_nearest_pow2_tests() {
-        assert_eq!(round_up_to_nearest_pow2(0), Err("Out of range"));
-        assert_eq!(round_up_to_nearest_pow2(1), Ok(1));
-        assert_eq!(round_up_to_nearest_pow2(2), Ok(2));
-        assert_eq!(round_up_to_nearest_pow2(3), Ok(4));
-        assert_eq!(round_up_to_nearest_pow2(4), Ok(4));
-        assert_eq!(round_up_to_nearest_pow2(5), Ok(8));
-        assert_eq!(round_up_to_nearest_pow2(6), Ok(8));
-        assert_eq!(round_up_to_nearest_pow2(7), Ok(8));
-        assert_eq!(round_up_to_nearest_pow2(8), Ok(8));
-        assert_eq!(round_up_to_nearest_pow2(9), Ok(16));
     }
 }
