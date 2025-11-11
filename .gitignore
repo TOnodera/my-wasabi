@@ -1,3 +1,5 @@
 /target
-
-log
+/mnt
+/log
+/generated
+/noli
