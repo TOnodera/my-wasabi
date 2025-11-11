@@ -8,14 +8,15 @@ use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
 use wasabi::uefi::{
-    exit_from_efi_services, init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, MemoryMapHolder,
-    VramTextWriter,
+    exit_from_efi_services, init_vram, EfiHandle, EfiMemoryType,
+    EfiSystemTable, MemoryMapHolder, VramTextWriter,
 };
 use wasabi::x86::hlt;
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
-    let mut vram = init_vram(efi_system_table).expect("Failed to initialize VRAM");
+    let mut vram =
+        init_vram(efi_system_table).expect("Failed to initialize VRAM");
     let vw = vram.width();
     let vh = vram.height();
 
@@ -46,7 +47,11 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     )
     .unwrap();
 
-    exit_from_efi_services(image_handle, efi_system_table, &mut memory_map);
+    exit_from_efi_boot_services(
+        image_handle,
+        efi_system_table,
+        &mut memory_map,
+    );
     writeln!(w, "Hello, Non-EFI World!").unwrap();
 
     loop {

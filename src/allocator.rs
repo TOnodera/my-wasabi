@@ -46,7 +46,8 @@ const HEADER_SIZE: usize = size_of::<Header>();
 const _: () = assert!(HEADER_SIZE == 32);
 const _: () = assert!(HEADER_SIZE.count_ones() == 1);
 
-pub const LAYOUT_PAGE_4K: Layout = unsafe { Layout::from_size_align_unchecked(4096, 4096) };
+pub const LAYOUT_PAGE_4K: Layout =
+    unsafe { Layout::from_size_align_unchecked(4096, 4096) };
 
 impl Header {
     fn can_provide(&self, size: usize, align: usize) -> bool {
@@ -81,7 +82,8 @@ impl Header {
 
         let mut size_used = 0;
         let allocated_addr = (self.end_addr() - size) & !(align - 1);
-        let mut header_for_allocated = unsafe { Self::new_from_addr(allocated_addr - HEADER_SIZE) };
+        let mut header_for_allocated =
+            unsafe { Self::new_from_addr(allocated_addr - HEADER_SIZE) };
 
         header_for_allocated.is_allocated = true;
         header_for_allocated.size = size + HEADER_SIZE;
@@ -92,9 +94,11 @@ impl Header {
             let mut header_for_padding =
                 unsafe { Self::new_from_addr(header_for_allocated.end_addr()) };
             header_for_padding.is_allocated = false;
-            header_for_padding.size = self.end_addr() - header_for_allocated.end_addr();
+            header_for_padding.size =
+                self.end_addr() - header_for_allocated.end_addr();
             size_used += header_for_padding.size;
-            header_for_padding.next_header = header_for_allocated.next_header.take();
+            header_for_padding.next_header =
+                header_for_allocated.next_header.take();
             header_for_allocated.next_header = Some(header_for_padding);
         }
         assert!(self.size >= size_used + HEADER_SIZE);
@@ -218,7 +222,8 @@ mod test {
         for align in [1, 2, 4, 8, 16, 32, 4096] {
             for e in pointers.iter_mut() {
                 *e = ALLOCATOR.alloc_with_options(
-                    Layout::from_size_align(1234, align).expect("Failed to create Layout"),
+                    Layout::from_size_align(1234, align)
+                        .expect("Failed to create Layout"),
                 );
                 assert!(*e as usize != 0);
                 assert!((*e as usize) % align == 0);
@@ -232,7 +237,8 @@ mod test {
             let mut pointers = [null_mut::<u8>(); 100];
             for e in pointers.iter_mut() {
                 *e = ALLOCATOR.alloc_with_options(
-                    Layout::from_size_align(1234, align).expect("Failed to create Layout"),
+                    Layout::from_size_align(1234, align)
+                        .expect("Failed to create Layout"),
                 );
                 assert!(*e as usize != 0);
                 assert!((*e as usize) % align == 0);
