@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 use core::writeln;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::init::init_basic_runtime;
+use wasabi::print::hexdump;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
 use wasabi::uefi::{
@@ -22,6 +23,7 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     info!("info");
     warn!("warn");
     error!("error");
+    hexdump(efi_system_table);
     let mut vram =
         init_vram(efi_system_table).expect("Failed to initialize VRAM");
     let vw = vram.width();
