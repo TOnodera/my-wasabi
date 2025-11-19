@@ -23,7 +23,7 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     info!("info");
     warn!("warn");
     error!("error");
-    hexdump(efi_system_table);
+    // hexdump(efi_system_table);
     let mut vram =
         init_vram(efi_system_table).expect("Failed to initialize VRAM");
     let vw = vram.width();
@@ -50,6 +50,10 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     .unwrap();
 
     writeln!(w, "Hello, Non-EFI World!").unwrap();
+
+    let cr3 = wasabi::x86::read_cr3();
+    println!("cr3 = {cr3:#p}");
+    hexdump(unsafe { &*cr3 });
 
     loop {
         hlt()
