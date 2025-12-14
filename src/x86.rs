@@ -103,3 +103,50 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
         }
     }
 }
+impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Display
+    for Entry<LEVEL, SHIFT, NEXT>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f)
+    }
+}
+impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
+    for Entry<LEVEL, SHIFT, NEXT>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f)
+    }
+}
+
+#[repr(align(4096))]
+pub struct Tabel<const LEVEL: usize, const SHIFT: usize, NEXT> {
+    entry: [Entry<LEVEL, SHIFT, NEXT>; 512],
+}
+impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
+    fn format(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "L{}TABLE @ {:#p} {{", LEVEL, self)?;
+        for i in 0..512 {
+            let e = &self.entry[i];
+            if !e.is_present() {
+                continue;
+            }
+            writeln!(f, "  entry[{:3}] = {:?}", i, e)?;
+        }
+        writeln!(f, "}}")
+    }
+    pub fn next_level(&self, index: usize) -> Option<&NEXT> {
+        self.entry.get(index).and_then(|e| e.table().ok())
+    }
+}
+impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
+    for Tabel<LEVEL, SHIFT, NEXT>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.format(f)
+    }
+}
+
+pub type PT = Tabel<1, 12, [u8; PAGE_SIZE]>;
+pub type PD = Tabel<2, 21, PT>;
+pub type PDPT = Tabel<3, 30, PD>;
+pub type PML4 = Tabel<4, 39, PDPT>;
