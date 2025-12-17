@@ -19,9 +19,6 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     println!("Booting Wasabi OS...");
     println!("image_handle: {:#18X}", image_handle);
     println!("efi_system_table: {:#p}", efi_system_table);
-    info!("info");
-    warn!("warn");
-    error!("error");
     // hexdump(efi_system_table);
     let mut vram =
         init_vram(efi_system_table).expect("Failed to initialize VRAM");

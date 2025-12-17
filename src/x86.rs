@@ -1,7 +1,17 @@
+extern crate alloc;
+
+use crate::error;
+use crate::info;
 use crate::result::Result;
+use alloc::boxed::Box;
 use core::arch::asm;
+use core::arch::global_asm;
 use core::fmt;
 use core::marker::PhantomData;
+use core::mem::offset_of;
+use core::mem::size_of;
+use core::mem::size_of_val;
+use core::pin::Pin;
 
 pub fn hlt() {
     unsafe { asm!("hlt") }
@@ -150,3 +160,278 @@ pub type PT = Tabel<1, 12, [u8; PAGE_SIZE]>;
 pub type PD = Tabel<2, 21, PT>;
 pub type PDPT = Tabel<3, 30, PD>;
 pub type PML4 = Tabel<4, 39, PDPT>;
+
+// es(Extra Segment) レジスタにセグメントセレクタを書き込む
+pub unsafe fn write_es(selector: u16) {
+    /**
+     * x86 アーキテクチャでは、セグメントレジスタ（CS、DS、ES、FS、GS、
+     * SS）は それぞれ特定の目的で使用されます。ES
+     * レジスタは、主に文字列操作命令で
+     * 使用される追加のデータセグメントを指すために使われます。
+     */
+    asm!("mov es, ax", in("ax") selector)
+}
+
+pub unsafe fn write_cs(cs: u16) {
+    asm!(
+        // ripレジスタには次に実行される命令のアドレスが入ってる。2fあ2つ後の命令の意味
+        // 戻ってきたときに実行する命令を汎用レジスタに保存
+        "lea rax, [rip + 2f]",
+        // CS(コードセグメント)をスタックに積む
+        "push cx",
+        // 戻り先をスタックに積む
+        "push rax",
+        // ここでcsをcxの値に、ripをraxの値に書き換えてジャンプする
+        "ljmp [rsp]",
+        // ljmp [rsp]はスタックをポップしないpushした分を戻している
+        "2:",
+        "add rsp,  8 + 2",
+        //
+        in("cx") cs
+    )
+}
+
+pub unsafe fn write_ss(selector: u16) {
+    // スタックセグメントレジスタを設定
+    asm!("mov ss, ax", in("ax") selector)
+}
+
+pub unsafe fn write_ds(selector: u16) {
+    // データセグメントレジスタを設定
+    asm!("mov ds, ax", in("ax") selector)
+}
+
+pub unsafe fn write_fs(selector: u16) {
+    // FSセグメントレジスタを設定
+    asm!("mov fs, ax", in("ax") selector)
+}
+
+pub unsafe fn write_gs(selector: u16) {
+    // GSセグメントレジスタを設定え
+    asm!("mov gs, ax", in("ax") selector)
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FPUContext {
+    data: [u8; 512],
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct GeneralRegisterContext {
+    rax: u64,
+    rdx: u64,
+    rbx: u64,
+    rbp: u64,
+    rsi: u64,
+    rdi: u64,
+    r8: u64,
+    r9: u64,
+    r10: u64,
+    r11: u64,
+    r12: u64,
+    r13: u64,
+    r14: u64,
+    r15: u64,
+    rcx: u64,
+}
+const _: () = assert!(size_of::<GeneralRegisterContext>() == (16 - 1) * 8);
+
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct InterruptContext {
+    rip: u64,    // 次の命令が実行されるアドレス
+    cs: u64,     // コードセグメント
+    rflags: u64, // フラグレジスタ
+    rsp: u64,    // スタックポインタ
+    ss: u64,     // スタックセグメント
+}
+const _: () = assert!(size_of::<InterruptContext>() == 5 * 8);
+
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct InterruptInfo {
+    fpu_context: FPUContext,      // FPUの状態
+    _dummy: u64,                  // アラインメント用のダミー
+    greg: GeneralRegisterContext, // 汎用レジスタの状態
+    error_code: u64,              // エラーコード
+    ctx: InterruptContext,        // 割り込み時のコンテキスト
+}
+const _: () = assert!(size_of::<InterruptInfo>() == (16 + 4 + 1) * 8 + 8 + 512);
+
+impl fmt::Debug for InterruptInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f,
+        "
+        {{
+            rip: {:#018X}, cs: {:#06X},
+            rsp: {:#018X}, ss: {:#06X},
+            rbp: {:#018X}
+            
+            rflags: {:#018X},
+            error_code: {:#018X}
+
+            rax: {:#018X}, rcx: {:#018X}, 
+            rdx: {:#018X}, rbx: {:#018X},
+            rsi: {:#018X}, rdi: {:#018X},
+            r8 : {:#018X}, r9 : {:#018X},
+            r10: {:#018x}, r11: {:#018X},
+            r12: {:#018X}, r13: {:#018X},
+            r14: {:#018X}, r15: {:#018X},
+        }}",
+        self.ctx.rip, 
+        self.ctx.cs,
+        self.ctx.rsp, 
+        self.ctx.ss,
+        self.greg.rbp, 
+        self.ctx.rflags,
+        self.error_code,
+        //
+        self.greg.rax,
+        self.greg.rcx,
+        self.greg.rdx,
+        self.greg.rbx,
+        //
+        self.greg.rsi,
+        self.greg.rdi,
+        //
+        self.greg.r8,
+        self.greg.r9,
+        self.greg.r10,
+        self.greg.r11,
+        self.greg.r12,
+        self.greg.r13,
+        self.greg.r14,
+        self.greg.r15
+        )
+    }
+}
+
+/// 割り込み番号ごとのエントリポイントを生成するマクロ
+/// $index: 割り込み番号
+/// x86_64の割り込みABIに沿ってエラーコード・割り込み番号を添えて共通ハンドラにジャンプ
+macro_rules! interrupt_entrypoint {
+    ($index:literal) => {
+        global_asm!(concat!(
+            ".global interrupt_entrypoint",
+            stringify!($index),
+            "\n",
+            "interrupt_entrypoint",
+            stringify!($index),
+            ":\n",
+            "push 0", // エラーコードがない場合は0をプッシュ
+            "push rcx",
+            "mov rcx, ",
+            stringify!($index),
+            "\n",
+            "jmp inthandler_common"
+        ));
+    }
+}
+
+macro_rules! interrupt_entrypoint_with_ecode {
+    ($index:literal) => {
+        global_asm!(concat!(
+                ".global interrupt_entrypoint",
+                stringify!($index),
+                "\n",
+                "interrupt_entrypoint",
+                stringify!($index),
+                ":\n",
+                "push rcx",
+                "mov rcx, ",
+                stringify!($index),
+                "\n",
+                "jmp inthandler_common"
+        )); 
+    };
+}
+
+interrupt_entrypoint!(3);
+interrupt_entrypoint!(6);
+interrupt_entrypoint_with_ecode!(8);
+interrupt_entrypoint_with_ecode!(13);
+interrupt_entrypoint_with_ecode!(14);
+interrupt_entrypoint!(32);
+
+extern "sysv64" {
+    fn interrupt_entrypoint3();
+    fn interrupt_entrypoint6();
+    fn interrupt_entrypoint8();
+    fn interrupt_entrypoint13();
+    fn interrupt_entrypoint14();
+    fn interrupt_entrypoint32();
+}
+
+global_asm!(
+    r#"
+.global inthandler_common
+    // 汎用レジスタの値を退避
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push r9
+    push r8
+    push rdi
+    push rsi
+    push rbp
+    push rbx
+    push rdx
+    push rax
+    // FPUの状態を退避(浮動小数点演算ユニット)
+    sub rsp, 512 + 8
+    fxsave64[rsp]
+    // 関数に渡すパラメータの準備
+    // | 引数    | レジスタ    |
+    // | ----    | -------     |
+    // | 第1引数 | **RDI**     |
+    // | 第2引数 | RSI         |
+    // | 第3引数 | RDX         |
+    // | 第4引数 | RCX         |
+    // | 第5引数 | R8          |
+    // | 第6引数 | R9          |
+
+    // 第一引数(現在のスタックフレームの全体を指すポインタ)
+    mov rdi, rsp
+    // 元のスタックの位置を保存
+    mov rbp, rsp
+    // ABI要求の16byteアラインメントを維持するために調整
+    and rsp, -16
+    // 第二引数(割り込み番号)
+    mov rsi, rcx
+    
+    call inthander
+
+    // 退避していた値を復元
+    mov rsp, rbp
+    fxrstor64[rsp]
+    add rsp, 512 + 8
+    pop rax
+    pop rdx
+    pop rbx
+    pop rbp
+    pop rsi
+    pop rdi
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    // 復帰処理
+    pop rcx
+    add rsp, 8
+    iretq
+    "#
+);
