@@ -6,11 +6,13 @@ use crate::result::Result;
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::arch::global_asm;
+use core::error;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::offset_of;
 use core::mem::size_of;
 use core::mem::size_of_val;
+use core::panic;
 use core::pin::Pin;
 
 pub fn hlt() {
@@ -435,3 +437,72 @@ global_asm!(
     iretq
     "#
 );
+
+/// CR2 レジスタの値を取得する関数
+/// CR2 レジスタは、ページフォルトが発生した際の仮想アドレスを保持します。
+/// つまりアクセスしようとして失敗した仮想アドレスを知るために使用される。
+pub fn read_cr2() -> u64 {
+    let cr2: u64;
+    unsafe {
+        asm!("mov rax, cr2",
+        out("rax") cr2
+        )
+    }
+    cr2
+}
+
+#[no_mangle]
+extern  "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
+    error!("Interrupt Info: {:?}", info);
+    error!("Exception {index:#04X}: ");
+
+    match index {
+        3 => error!("Breakpoint Exception"),
+        6 => error!("Invalid Opcode Exception"),
+        8 => error!("Double Fault Exception"),
+        13 =>{ error!("General Protection Fault");
+            let rip = info.ctx.rip;
+            error!("Bytes @ RIP({rip:#018X}): ");
+            let rip = rip as *const u8;
+            let bytes = unsafe { core::slice::from_raw_parts(rip, 16) };
+            error!(" = {bytes:02X?}");
+    },
+        14 => {
+            error!("Page Fault Exception");
+            error!("CR2 = {:#018X}", read_cr2());
+            error!("Caused by: A {} mode {} on a {} page, page structures are {}",
+                if info.error_code & 0b0000_0100 != 0 {
+                    "user"
+                } else { 
+                    "supervisor"
+                },
+                if info.error_code & 0b0001_0000 != 0 {
+                    "instruction fetch"
+                } else if info.error_code & 0b0000_0010 != 0 {
+                    "data write"
+                } else {
+                    "data read"
+                },
+                if info.error_code & 0b0001 != 0 {
+                    "present"
+                } else {
+                    "non-present"
+                },
+                if info.error_code & 0b1000 != 0{
+                    "invalid"
+                } else {
+                    "valid"
+                }
+            );
+        }
+        _ => error!("Not handled"),
+    }
+    panic!("fatal exception");
+}
+
+#[no_mangle]
+extern  "sysv64" fn int_handler_unimplemented() {
+    panic!("unexpected interrupt");
+}
+
+// PDRTTTT (TTTT: Type, R: Reserved, D: DPL, P: Present)
