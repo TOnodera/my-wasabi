@@ -506,3 +506,49 @@ extern  "sysv64" fn int_handler_unimplemented() {
 }
 
 // PDRTTTT (TTTT: Type, R: Reserved, D: DPL, P: Present)
+pub const BIT_FLAGS_INTGATE: u8 = 0b0000_1110u8;
+pub const BIT_FLAGS_PRESENT: u8 = 0b1000_0000u8;
+// DPL: Descriptor Privilege Level(特権レベル)
+pub const BIT_FLAGS_DPL0: u8 = 0 << 5;
+pub const BIT_FLAGS_DPL3: u8 = 3 << 5;
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+enum IdtAttr{
+    _NotPresent = 0,
+    IntGateDPL0 = BIT_FLAGS_INTGATE | BIT_FLAGS_DPL0 | BIT_FLAGS_PRESENT,
+    IntGateDPL3 = BIT_FLAGS_INTGATE | BIT_FLAGS_DPL3 | BIT_FLAGS_PRESENT,
+}
+
+#[repr(C, packed)]
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+pub struct IdtDescriptor {
+    offset_low: u16,
+    segment_selector: u16,
+    ist_index: u8,
+    attr: IdtAttr,
+    offset_mid: u16,
+    offset_hight: u32,
+    _reserved: u32,
+}
+const _ : () = assert!(size_of::<IdtDescriptor>() == 16);
+impl IdtDescriptor {
+    fn new(
+        segment_selector: u16,
+        ist_index: u8,
+        attr: IdtAttr,
+        f: unsafe extern "sysv64" fn(),
+    ) -> Self {
+        let handler_addr = f as *const unsafe extern "sysv64" fn() as usize;
+        Self {
+            offset_low: handler_addr as u16,
+            offset_mid: (handler_addr >> 16) as u16,
+            offset_hight: (handler_addr >> 32) as u32,
+            segment_selector,
+            ist_index,
+            attr,
+            _reserved: 0,
+        }
+    }
+}
