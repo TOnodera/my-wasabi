@@ -6,7 +6,6 @@ use crate::result::Result;
 use alloc::boxed::Box;
 use core::arch::asm;
 use core::arch::global_asm;
-use core::error;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem::offset_of;
@@ -326,8 +325,8 @@ macro_rules! interrupt_entrypoint {
             "interrupt_entrypoint",
             stringify!($index),
             ":\n",
-            "push 0", // エラーコードがない場合は0をプッシュ
-            "push rcx",
+            "push 0 \n", // エラーコードがない場合は0をプッシュ
+            "push rcx \n",
             "mov rcx, ",
             stringify!($index),
             "\n",
@@ -345,7 +344,7 @@ macro_rules! interrupt_entrypoint_with_ecode {
                 "interrupt_entrypoint",
                 stringify!($index),
                 ":\n",
-                "push rcx",
+                "push rcx\n",
                 "mov rcx, ",
                 stringify!($index),
                 "\n",
@@ -550,5 +549,130 @@ impl IdtDescriptor {
             attr,
             _reserved: 0,
         }
+    }
+}
+
+#[allow(dead_code)]
+#[repr(C, packed)]
+#[derive(Debug)]
+struct IdtrParameters {
+    limit: u16,
+    base: *const IdtDescriptor,
+}
+const _: () = assert!(size_of::<IdtrParameters>() == 10);
+const _: () = assert!(offset_of!(IdtrParameters, base) == 2);
+
+pub struct Idt {
+    #[allow(dead_code)]
+    entries: Pin<Box<[IdtDescriptor; 0x100]>>,
+} 
+impl Idt {
+   pub fn new(
+    segment_selector: u16,
+   )  -> Self {
+        let mut entries = [IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL0, // カーネルモード
+            int_handler_unimplemented,
+        ); 0x100];
+        entries[3] = IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL3, // ユーザーモードからの割り込み許可
+            interrupt_entrypoint3,
+        );
+        entries[6] = IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL0, // カーネルモード
+            interrupt_entrypoint6,
+        );
+        entries[8] = IdtDescriptor::new(
+            segment_selector,
+            2, // IST 2 を使用
+            IdtAttr::IntGateDPL0, // カーネルモード
+            interrupt_entrypoint8,
+        );
+        entries[13] = IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL0, // カーネルモード
+            interrupt_entrypoint13,
+        );
+        entries[14] = IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL0, // カーネルモード
+            interrupt_entrypoint14,
+        );
+        entries[32] = IdtDescriptor::new(
+            segment_selector,
+            1,
+            IdtAttr::IntGateDPL0, // カーネルモード
+            interrupt_entrypoint32,
+        );
+        let limit = size_of_val(&entries) as u16;
+        let entries = Box::pin(entries);
+        let params = IdtrParameters {
+            limit,
+            base: entries.as_ptr()
+        };
+        info!("Loading IDT: {params:?}");
+        unsafe {
+            asm!("lidt [rcx]", in("rcx") &params);
+        };
+        Self {
+            entries 
+        }
+    }
+}
+
+#[repr(C, packed)]
+struct TaskStateSegment64Inner {
+    _reserved0: u32,
+    _rsp: [u64; 3],
+    _ist: [u64; 8],
+    _reserved1: [u16; 5],
+    _io_map_base_addr: u16,
+}
+const _: () = assert!(size_of::<TaskStateSegment64Inner>() == 104);
+
+pub struct TaskStateSegment64 {
+    inner: Pin<Box<TaskStateSegment64Inner>>,
+}
+impl TaskStateSegment64 {
+    pub fn phys_addr(&self) -> u64 {
+        self.inner.as_ref().get_ref() as *const TaskStateSegment64Inner as u64
+    }
+    unsafe fn alloc_interrupt_stack() -> u64 {
+        const HANDLER_STACK_SIZE: usize = 64 * 1024;
+        let stack = Box::new([0u8; HANDLER_STACK_SIZE]);
+        // スタックの先頭アドレスを返す
+        let rsp = unsafe {
+            stack.as_ptr().add(HANDLER_STACK_SIZE) as u64
+        };
+        core::mem::forget(stack);
+        rsp
+    }
+    pub fn new() -> Self {
+        let rsp0 = unsafe { Self::alloc_interrupt_stack() };
+        // 割り込みスタックテーブル
+        let mut ist = [0u64; 8];
+        for ist in ist[1..=7].iter_mut() {
+            *ist = unsafe { Self::alloc_interrupt_stack() };
+        }
+        let tss64 = TaskStateSegment64Inner {
+            _reserved0: 0,
+            _rsp: [rsp0, 0, 0],
+            _ist: ist,
+            _reserved1: [0; 5],
+            _io_map_base_addr: 0,
+        };
+        let this = Self {
+            inner: Box::pin(tss64),
+        };
+        info!("TSS64 craeted @ {:#X}", this.phys_addr());
+        this
     }
 }
