@@ -25,6 +25,6 @@ if [ $RETCODE -eq 0 ]; then
 elif [ $RETCODE -eq 3 ]; then
     printf "\nPass\n"
 else
-    echo "\nFail: QEMU exited with code $RETCODE."
+    echo "Fail: QEMU exited with code $RETCODE."
     exit 1 
 fi

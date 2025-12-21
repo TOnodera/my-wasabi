@@ -165,18 +165,16 @@ pub type PML4 = Tabel<4, 39, PDPT>;
 
 // es(Extra Segment) レジスタにセグメントセレクタを書き込む
 pub unsafe fn write_es(selector: u16) {
-    /**
-     * x86 アーキテクチャでは、セグメントレジスタ（CS、DS、ES、FS、GS、
-     * SS）は それぞれ特定の目的で使用されます。ES
-     * レジスタは、主に文字列操作命令で
-     * 使用される追加のデータセグメントを指すために使われます。
-     */
+    // x86 アーキテクチャでは、セグメントレジスタ（CS、DS、ES、FS、GS、
+    // SS）は それぞれ特定の目的で使用されます。ES
+    // レジスタは、主に文字列操作命令で
+    // 使用される追加のデータセグメントを指すために使われます。
     asm!("mov es, ax", in("ax") selector)
 }
 
 pub unsafe fn write_cs(cs: u16) {
     asm!(
-        // ripレジスタには次に実行される命令のアドレスが入ってる。2fあ2つ後の命令の意味
+        // ripレジスタには実行される命令のアドレスが入ってる。2fは2つ後の命令の意味
         // 戻ってきたときに実行する命令を汎用レジスタに保存
         "lea rax, [rip + 2f]",
         // CS(コードセグメント)をスタックに積む
@@ -205,11 +203,12 @@ pub unsafe fn write_ds(selector: u16) {
 
 pub unsafe fn write_fs(selector: u16) {
     // FSセグメントレジスタを設定
+    // スレッド固有データの高速アクセスに使用されることが多い
     asm!("mov fs, ax", in("ax") selector)
 }
 
 pub unsafe fn write_gs(selector: u16) {
-    // GSセグメントレジスタを設定え
+    // GSセグメントレジスタを設定
     asm!("mov gs, ax", in("ax") selector)
 }
 
@@ -267,7 +266,7 @@ struct InterruptInfo {
 const _: () = assert!(size_of::<InterruptInfo>() == (16 + 4 + 1) * 8 + 8 + 512);
 
 impl fmt::Debug for InterruptInfo {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
         "
         {{
@@ -345,7 +344,7 @@ macro_rules! interrupt_entrypoint_with_ecode {
                 "interrupt_entrypoint",
                 stringify!($index),
                 ":\n",
-                "push rcx\n",
+                "push rcx \n",
                 "mov rcx, ",
                 stringify!($index),
                 "\n",
@@ -373,6 +372,7 @@ extern "sysv64" {
 global_asm!(
     r#"
 .global inthandler_common
+inthandler_common:
     // 汎用レジスタの値を退避
     push r15
     push r14
@@ -410,7 +410,7 @@ global_asm!(
     // 第二引数(割り込み番号)
     mov rsi, rcx
     
-    call inthander
+    call inthandler
 
     // 退避していた値を復元
     mov rsp, rbp
@@ -660,6 +660,7 @@ impl TaskStateSegment64 {
         let rsp0 = unsafe { Self::alloc_interrupt_stack() };
         // 割り込みスタックテーブル
         let mut ist = [0u64; 8];
+        // ist[0]は予約済みなので使わない
         for ist in ist[1..=7].iter_mut() {
             *ist = unsafe { Self::alloc_interrupt_stack() };
         }
@@ -725,14 +726,14 @@ enum GdtAttr {
 
 #[allow(dead_code)]
 #[repr(C, packed)]
-struct GdtParameters {
+struct GdtrParameters {
     limit: u16,
     base: *const Gdt,
 }
 
 pub const KERNEL_CS : u16 = 1 << 3;
 pub const KERNEL_DS : u16 = 2 << 3;
-pub const TSS64_SEGMENT : u16 = 3 << 3;
+pub const TSS64_SEL : u16 = 3 << 3;
 
 #[allow(dead_code)]
 #[repr(C, packed)]
@@ -753,11 +754,11 @@ pub struct GdtWrapper {
 impl GdtWrapper {
     pub fn load(&self)
     {
-        let params = GdtrPrameters {
+        let params = GdtrParameters{
             limit: (size_of::<Gdt>() - 1) as u16,
             base: self.inner.as_ref().get_ref() as *const Gdt,
         };
-        info!("Loading GDT @ {params:#018X}");
+        info!("Loading GDT @ {:#018X}", params.base as u64);
         unsafe {
             // 命令名：LGDT (Load Global Descriptor Table Register)
             // 役割：GDTR（GDT レジスタ）に GDT の情報をロード
@@ -768,6 +769,16 @@ impl GdtWrapper {
             // LGDT 命令で GDTR にロードする。
             // csxにはGdtrPrameters構造体のアドレスが入っている
             asm!("lgdt [rcx]", in("rcx") &params);
+
+            info!("Loading TSS ( selector ={:#X} )", TSS64_SEL);
+
+            // 命令名：LTR (Load Task Register)
+            // 役割：TR（タスクレジスタ）に TSS セグメントセレクタをロード
+            // いつ使う？：ブート時 / カーネル初期化時
+            // 権限：特権命令（ring 0）
+            // 汎用レジスタ AX に TSS セグメントセレクタをセットし、
+            // LTR 命令で TR にロードする。
+            asm!("ltr cx", in("cx") TSS64_SEL);
 
         };
     }
@@ -812,7 +823,7 @@ struct TaskStateSegment64Descriptor {
     base_low: u16,
     base_mid_low: u8,
     attr: u16,
-    base_mid_hight: u32,
+    base_mid_hight: u8,
     base_high: u32,
     reserved: u32,
 }
@@ -823,7 +834,7 @@ impl TaskStateSegment64Descriptor {
             base_low: (base_addr & 0xffff) as u16,
             base_mid_low: ((base_addr >> 16) & 0xff) as u8,
             attr: 0b1000_0000_1000_0001, 
-            base_mid_hight: ((base_addr >> 24) & 0xff) as u32,
+            base_mid_hight: ((base_addr >> 24) & 0xff) as u8,
             base_high: ((base_addr >> 32) & 0xffffffff) as u32,
             reserved: 0,
         }
