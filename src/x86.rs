@@ -457,7 +457,10 @@ extern  "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
     error!("Exception {index:#04X}: ");
 
     match index {
-        3 => error!("Breakpoint Exception"),
+        3 => {
+            error!("Breakpoint Exception"); 
+            return;
+        },
         6 => error!("Invalid Opcode Exception"),
         8 => error!("Double Fault Exception"),
         13 =>{ error!("General Protection Fault");
