@@ -8,18 +8,26 @@ use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::init::init_basic_runtime;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
+use wasabi::uefi::locate_loaded_image_protocol;
 use wasabi::uefi::{
     init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, VramTextWriter,
 };
 use wasabi::x86::{hlt, init_exceptions, trigger_debug_interrupt};
-use wasabi::{error, info, println, warn};
+use wasabi::{info, println};
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     println!("Booting Wasabi OS...");
     println!("image_handle: {:#18X}", image_handle);
     println!("efi_system_table: {:#p}", efi_system_table);
-    // hexdump(efi_system_table);
+
+    let loaded_image_protocol =
+        locate_loaded_image_protocol(image_handle, efi_system_table)
+            .expect("Failed to locate Loaded Image Protocol");
+
+    println!("image_base: {:#018X}", loaded_image_protocol.image_base);
+    println!("image_size: {:#018X}", loaded_image_protocol.image_size);
+
     let mut vram =
         init_vram(efi_system_table).expect("Failed to initialize VRAM");
     let vw = vram.width();
