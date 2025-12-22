@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 use core::writeln;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::init::init_basic_runtime;
+use wasabi::init::init_paging;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
 use wasabi::uefi::locate_loaded_image_protocol;
@@ -71,6 +72,9 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     info!("Exception initialized.");
     trigger_debug_interrupt();
     info!("Execution continued after debug interrupt.");
+
+    init_paging(&memory_map);
+    info!("Now we are using our own page tables!");
 
     loop {
         hlt()

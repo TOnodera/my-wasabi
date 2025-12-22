@@ -12,6 +12,7 @@ use core::marker::PhantomData;
 use core::mem::offset_of;
 use core::mem::size_of;
 use core::mem::size_of_val;
+use core::mem::MaybeUninit;
 use core::panic;
 use core::pin::Pin;
 
@@ -114,6 +115,35 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
             Err("Page not found.")
         }
     }
+    fn table_mut(&mut self) -> Result<&mut NEXT> {
+        if self.is_present() {
+            Ok(unsafe { &mut *((self.value & !ATTR_MASK) as *mut NEXT) })
+        } else {
+            Err("Page not found.")
+        }
+    }
+    fn set_page(&mut self, phys: u64, attr: PageAttr) -> Result<()> {
+        if phys & ATTR_MASK != 0 {
+            return Err("Physical address is not aligned.");
+        } 
+        self.value = phys | (attr as u64);
+        Ok(())
+    }
+    fn populate(&mut self) -> Result<&mut Self> {
+        if self.is_present() {
+            return Err("Page is already populated.");
+        }
+        let next: Box<NEXT> = Box::new(unsafe { MaybeUninit::zeroed().assume_init() });
+        self.value = Box::into_raw(next) as u64 | PageAttr::ReadWriteKernel as u64;
+        Ok(self)
+    }
+    fn ensure_populated(&mut self) -> Result<&mut Self> {
+        if self.is_present() {
+            Ok(self)
+        } else {
+            self.populate()
+        }
+    }
 }
 impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Display
     for Entry<LEVEL, SHIFT, NEXT>
@@ -149,6 +179,9 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
     pub fn next_level(&self, index: usize) -> Option<&NEXT> {
         self.entry.get(index).and_then(|e| e.table().ok())
     }
+    fn calc_index(&self, addr: u64) -> usize{
+        ((addr >> SHIFT) & 0x1_1111_1111) as usize
+    }
 }
 impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
     for Tabel<LEVEL, SHIFT, NEXT>
@@ -162,6 +195,38 @@ pub type PT = Tabel<1, 12, [u8; PAGE_SIZE]>;
 pub type PD = Tabel<2, 21, PT>;
 pub type PDPT = Tabel<3, 30, PD>;
 pub type PML4 = Tabel<4, 39, PDPT>;
+
+impl PML4 {
+    pub fn new() -> Box<Self> {
+        Box::new(Self::default())
+    }
+    fn default() -> Self {
+        unsafe { MaybeUninit::zeroed().assume_init() }
+    }
+    pub fn create_mapping(&mut self, virt_start: u64, virt_end: u64, phys: u64, attr: PageAttr) -> Result<()>{
+        if virt_start & ATTR_MASK != 0 {
+            return Err("Invalid virtual start address.");
+        }
+        if virt_end & ATTR_MASK != 0 {
+            return Err("Invalid virtual end address.");
+        }
+        if phys & ATTR_MASK != 0 {
+            return Err("Invalid virt_end.");
+        }
+        for addr in (virt_start..virt_end).step_by(PAGE_SIZE) {
+            let index = self.calc_index(addr);
+            let table = self.entry[index].ensure_populated()?.table_mut()?;
+            let index = table.calc_index(addr);
+            let table = table.entry[index].ensure_populated()?.table_mut()?;
+            let index = table.calc_index(addr);
+            let table = table.entry[index].ensure_populated()?.table_mut()?;
+            let index = table.calc_index(addr);
+            let pte = &mut table.entry[index];
+            pte.set_page(phys + (addr - virt_start), attr)?;
+        }
+        Ok(())
+    }
+}
 
 // es(Extra Segment) レジスタにセグメントセレクタを書き込む
 pub unsafe fn write_es(selector: u16) {
@@ -849,4 +914,9 @@ pub fn trigger_debug_interrupt() {
     unsafe {
         asm!("int3");
     }
+}
+
+#[no_mangle]
+pub unsafe fn write_c3(table: *const PML4) {
+    asm!("mov cr3, rax", in("rax") table)
 }
