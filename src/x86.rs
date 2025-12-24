@@ -119,6 +119,7 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
         if self.is_present() {
             Ok(unsafe { &mut *((self.value & !ATTR_MASK) as *mut NEXT) })
         } else {
+            error!("Page not found.");
             Err("Page not found.")
         }
     }
@@ -131,6 +132,7 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
     }
     fn populate(&mut self) -> Result<&mut Self> {
         if self.is_present() {
+            error!("Page is already populated.");
             return Err("Page is already populated.");
         }
         let next: Box<NEXT> = Box::new(unsafe { MaybeUninit::zeroed().assume_init() });
@@ -180,7 +182,7 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
         self.entry.get(index).and_then(|e| e.table().ok())
     }
     fn calc_index(&self, addr: u64) -> usize{
-        ((addr >> SHIFT) & 0x1_1111_1111) as usize
+        ((addr >> SHIFT) & 0b1_1111_1111) as usize
     }
 }
 impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
@@ -205,13 +207,16 @@ impl PML4 {
     }
     pub fn create_mapping(&mut self, virt_start: u64, virt_end: u64, phys: u64, attr: PageAttr) -> Result<()>{
         if virt_start & ATTR_MASK != 0 {
+            error!("Invalid virtual start address.");
             return Err("Invalid virtual start address.");
         }
         if virt_end & ATTR_MASK != 0 {
+            error!("Invalid virtual end address.");
             return Err("Invalid virtual end address.");
         }
         if phys & ATTR_MASK != 0 {
-            return Err("Invalid virt_end.");
+            error!("Invalid physical address.");
+            return Err("Invalid physical address.");
         }
         for addr in (virt_start..virt_end).step_by(PAGE_SIZE) {
             let index = self.calc_index(addr);
@@ -241,6 +246,7 @@ pub unsafe fn write_cs(cs: u16) {
     asm!(
         // ripレジスタには実行される命令のアドレスが入ってる。2fは2つ後の命令の意味
         // 戻ってきたときに実行する命令を汎用レジスタに保存
+        // 
         "lea rax, [rip + 2f]",
         // CS(コードセグメント)をスタックに積む
         "push cx",
