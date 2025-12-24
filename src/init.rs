@@ -5,7 +5,7 @@ use crate::uefi::EfiHandle;
 use crate::uefi::EfiMemoryType::*;
 use crate::uefi::EfiSystemTable;
 use crate::uefi::MemoryMapHolder;
-use crate::x86::write_c3;
+use crate::x86::write_cr3;
 use crate::x86::PageAttr;
 use crate::x86::PAGE_SIZE;
 use crate::x86::PML4;
@@ -45,6 +45,6 @@ pub fn init_paging(memory_map: &MemoryMapHolder) {
         .create_mapping(0, end_of_mem, 0, PageAttr::ReadWriteKernel)
         .expect("Failed to create paging mappings");
     unsafe {
-        write_c3(Box::into_raw(table));
+        write_cr3(Box::into_raw(table));
     }
 }

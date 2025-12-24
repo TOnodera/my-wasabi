@@ -13,7 +13,10 @@ use wasabi::uefi::locate_loaded_image_protocol;
 use wasabi::uefi::{
     init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, VramTextWriter,
 };
-use wasabi::x86::{hlt, init_exceptions, trigger_debug_interrupt};
+use wasabi::x86::{
+    flush_tlb, hlt, init_exceptions, read_cr3, trigger_debug_interrupt,
+    PageAttr,
+};
 use wasabi::{info, println};
 
 #[no_mangle]
@@ -75,6 +78,14 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
 
     init_paging(&memory_map);
     info!("Now we are using our own page tables!");
+
+    let page_table = read_cr3();
+    unsafe {
+        (*page_table)
+            .create_mapping(0, 4096, 0, PageAttr::NotPresent)
+            .expect("Failded to unmap page 0");
+    }
+    flush_tlb();
 
     loop {
         hlt()

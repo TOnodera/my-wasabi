@@ -693,7 +693,6 @@ impl Idt {
             limit,
             base: entries.as_ptr()
         };
-        info!("Loading IDT: {params:?}");
         unsafe {
             asm!("lidt [rcx]", in("rcx") &params);
         };
@@ -748,7 +747,6 @@ impl TaskStateSegment64 {
         let this = Self {
             inner: Box::pin(tss64),
         };
-        info!("TSS64 craeted @ {:#X}", this.phys_addr());
         this
     }
 }
@@ -832,7 +830,6 @@ impl GdtWrapper {
             limit: (size_of::<Gdt>() - 1) as u16,
             base: self.inner.as_ref().get_ref() as *const Gdt,
         };
-        info!("Loading GDT @ {:#018X}", params.base as u64);
         unsafe {
             // 命令名：LGDT (Load Global Descriptor Table Register)
             // 役割：GDTR（GDT レジスタ）に GDT の情報をロード
@@ -844,7 +841,6 @@ impl GdtWrapper {
             // csxにはGdtrPrameters構造体のアドレスが入っている
             asm!("lgdt [rcx]", in("rcx") &params);
 
-            info!("Loading TSS ( selector ={:#X} )", TSS64_SEL);
 
             // 命令名：LTR (Load Task Register)
             // 役割：TR（タスクレジスタ）に TSS セグメントセレクタをロード
@@ -923,6 +919,12 @@ pub fn trigger_debug_interrupt() {
 }
 
 #[no_mangle]
-pub unsafe fn write_c3(table: *const PML4) {
+pub unsafe fn write_cr3(table: *const PML4) {
     asm!("mov cr3, rax", in("rax") table)
+}
+
+pub fn flush_tlb(){
+    unsafe {
+        write_cr3(read_cr3());  
+    }
 }
