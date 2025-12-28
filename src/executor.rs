@@ -1,13 +1,17 @@
 extern crate alloc;
+use crate::info;
 use crate::result::Result;
 use crate::x86::busy_loop_hint;
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use core::fmt::write;
 use core::fmt::Debug;
 use core::future::Future;
 use core::panic::Location;
 use core::pin::Pin;
 use core::ptr::null;
+use core::sync::atomic::AtomicBool;
+use core::sync::atomic::Ordering;
 use core::task::Context;
 use core::task::Poll;
 use core::task::RawWaker;
@@ -68,4 +72,67 @@ pub fn block_on<T>(
             Poll::Pending => busy_loop_hint(),
         }
     }
+}
+
+pub struct Executor {
+    task_queue: Option<VecDeque<Task<()>>>,
+}
+impl Executor {
+    pub const fn new() -> Self {
+        Self { task_queue: None }
+    }
+    fn task_queue(&mut self) -> &mut VecDeque<Task<()>> {
+        if self.task_queue.is_none() {
+            self.task_queue = Some(VecDeque::new());
+        }
+        self.task_queue.as_mut().unwrap()
+    }
+    pub fn enqueue(&mut self, task: Task<()>) {
+        self.task_queue().push_back(task);
+    }
+    pub fn run(mut executor: Self) -> ! {
+        info!("Executing starts running...");
+        loop {
+            let task = executor.task_queue().pop_front();
+            if let Some(mut task) = task {
+                let waker = no_op_waker();
+                let mut context = Context::from_waker(&waker);
+                match task.poll(&mut context) {
+                    Poll::Ready(result) => {
+                        info!("Task completed: {:?}: {:?}", task, result);
+                    }
+                    Poll::Pending => {
+                        executor.task_queue().push_back(task);
+                    }
+                }
+            }
+        }
+    }
+}
+impl Default for Executor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Default)]
+pub struct Yield {
+    polled: AtomicBool,
+}
+impl Future for Yield {
+    type Output = ();
+    fn poll(
+        self: Pin<&mut Self>,
+        _context: &mut Context,
+    ) -> Poll<Self::Output> {
+        if self.polled.fetch_or(true, Ordering::SeqCst) {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
+        }
+    }
+}
+
+pub async fn yield_execution() {
+    Yield::default().await
 }

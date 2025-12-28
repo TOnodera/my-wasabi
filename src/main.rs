@@ -5,6 +5,9 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::writeln;
 use wasabi::executor::block_on;
+use wasabi::executor::yield_execution;
+use wasabi::executor::Executor;
+use wasabi::executor::Task;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::init::init_basic_runtime;
 use wasabi::init::init_paging;
@@ -88,15 +91,25 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     }
     flush_tlb();
 
-    let result = block_on(async {
-        info!("Hello from the async world.");
+    let task1 = Task::new(async {
+        for i in 100..=103 {
+            info!("Task 1 - Count: {}", i);
+            yield_execution().await;
+        }
         Ok(())
     });
-    info!("block_on returned: {:?}", result);
+    let task2 = Task::new(async {
+        for i in 200..=203 {
+            info!("Task 2 - Count: {}", i);
+            yield_execution().await;
+        }
+        Ok(())
+    });
 
-    loop {
-        hlt()
-    }
+    let mut executor = Executor::new();
+    executor.enqueue(task1);
+    executor.enqueue(task2);
+    Executor::run(executor);
 }
 
 #[panic_handler]
