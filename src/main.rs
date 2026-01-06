@@ -4,11 +4,11 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::writeln;
-use wasabi::executor::block_on;
 use wasabi::executor::yield_execution;
 use wasabi::executor::Executor;
 use wasabi::executor::Task;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
+use wasabi::hpet::Hpet;
 use wasabi::init::init_basic_runtime;
 use wasabi::init::init_paging;
 use wasabi::qemu::exit_qemu;
@@ -96,10 +96,11 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     let hpet = hpet
         .base_address()
         .expect("Failed to get HPET base address");
-    info!("HPET is at {hpet:#018X}");
+    info!("HPET is at {hpet:#p}");
+    let hpet = Hpet::new(hpet);
     let task1 = Task::new(async move {
         for i in 100..=103 {
-            info!("Task 1 - Count: {}", i);
+            info!("{i} hpet.main_conter = {}", hpet.main_counter());
             yield_execution().await;
         }
         Ok(())
