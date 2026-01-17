@@ -1,6 +1,9 @@
 use core::mem::size_of;
 use core::ptr::read_volatile;
 use core::ptr::write_volatile;
+use core::time::Duration;
+
+use crate::mutex::Mutex;
 
 const TIMER_CONFIG_LEVEL_TRIGGER: u64 = 1 << 1;
 const TIMER_CONFIG_INT_ENABLE: u64 = 1 << 2;
@@ -76,5 +79,20 @@ impl Hpet {
     }
     pub fn freq(&self) -> u64 {
         self.freq
+    }
+}
+
+static HPET: Mutex<Option<Hpet>> = Mutex::new(None);
+pub fn set_global_hpet(hpet: Hpet) {
+    assert!(HPET.lock().is_none());
+    *HPET.lock() = Some(hpet)
+}
+pub fn global_timestamp() -> Duration {
+    if let Some(hpet) = &*HPET.lock() {
+        let ns = hpet.main_counter() as u128 * 1_000_000_000_000_000
+            / hpet.freq() as u128;
+        Duration::from_nanos(ns as u64)
+    } else {
+        Duration::ZERO
     }
 }
