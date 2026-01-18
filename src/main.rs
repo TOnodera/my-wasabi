@@ -22,12 +22,9 @@ use wasabi::uefi::{
     init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, VramTextWriter,
 };
 use wasabi::x86::{
-    flush_tlb, hlt, init_exceptions, read_cr3, trigger_debug_interrupt,
-    PageAttr,
+    flush_tlb, init_exceptions, read_cr3, trigger_debug_interrupt, PageAttr,
 };
 use wasabi::{info, println};
-
-static mut GLOBAL_HPET: Option<Hpet> = None;
 
 #[no_mangle]
 fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
@@ -107,14 +104,14 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     let task1 = Task::new(async move {
         for i in 100..=103 {
             info!("{i} hpet.main_counter = {:?}", global_timestamp() - t0);
-            TimeoutFuture::new(Duration::from_secs(1)).await;
+            TimeoutFuture::new(Duration::from_secs(30)).await;
         }
         Ok(())
     });
     let task2 = Task::new(async move {
         for i in 200..=203 {
             info!("{i} hpet.main_counter = {:?}", global_timestamp() - t0);
-            TimeoutFuture::new(Duration::from_secs(2)).await;
+            TimeoutFuture::new(Duration::from_secs(40)).await;
         }
         Ok(())
     });

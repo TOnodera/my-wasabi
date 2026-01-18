@@ -81,8 +81,8 @@ impl Hpet {
         self.freq
     }
 }
-
 static HPET: Mutex<Option<Hpet>> = Mutex::new(None);
+
 pub fn set_global_hpet(hpet: Hpet) {
     assert!(HPET.lock().is_none());
     *HPET.lock() = Some(hpet)
