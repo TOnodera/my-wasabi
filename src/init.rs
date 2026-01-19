@@ -7,6 +7,7 @@ use crate::hpet::Hpet;
 use crate::info;
 use crate::uefi::exit_from_efi_boot_services;
 use crate::uefi::EfiHandle;
+use crate::uefi::EfiMemoryType;
 use crate::uefi::EfiMemoryType::*;
 use crate::uefi::EfiSystemTable;
 use crate::uefi::MemoryMapHolder;
@@ -49,6 +50,9 @@ pub fn init_paging(memory_map: &MemoryMapHolder) {
     table
         .create_mapping(0, end_of_mem, 0, PageAttr::ReadWriteKernel)
         .expect("Failed to create paging mappings");
+    table
+        .create_mapping(0, 4096, 0, PageAttr::NotPresent)
+        .expect("Failded to unmap page 0");
     unsafe {
         write_cr3(Box::into_raw(table));
     }
@@ -63,4 +67,17 @@ pub fn init_hpet(acpi: &AcpiRsdpStruct) {
     info!("HPET is at {hpet_base_address:#p}");
     let hpet = Hpet::new(hpet_base_address);
     set_global_hpet(hpet);
+}
+
+pub fn init_allocator(memory_map: &MemoryMapHolder) {
+    let mut total_memory_pages = 0;
+    for e in memory_map.iter() {
+        if e.memory_type() != EfiMemoryType::CONVENTIONAL_MEMORY {
+            continue;
+        }
+        total_memory_pages += e.number_of_pages();
+        info!("{e:?}");
+    }
+    let total_memory_size_mib = total_memory_pages * 4096 / 1024 / 1024;
+    info!("Total: {total_memory_pages} pages = {total_memory_size_mib} Mib");
 }

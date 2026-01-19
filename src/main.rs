@@ -11,18 +11,15 @@ use wasabi::executor::Task;
 use wasabi::executor::TimeoutFuture;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::hpet::global_timestamp;
+use wasabi::init::init_allocator;
 use wasabi::init::init_basic_runtime;
 use wasabi::init::init_hpet;
 use wasabi::init::init_paging;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
 use wasabi::uefi::locate_loaded_image_protocol;
-use wasabi::uefi::{
-    init_vram, EfiHandle, EfiMemoryType, EfiSystemTable, VramTextWriter,
-};
-use wasabi::x86::{
-    flush_tlb, init_exceptions, read_cr3, trigger_debug_interrupt, PageAttr,
-};
+use wasabi::uefi::{init_vram, EfiHandle, EfiSystemTable, VramTextWriter};
+use wasabi::x86::init_exceptions;
 use wasabi::{info, println};
 
 #[no_mangle]
@@ -49,50 +46,12 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     let acpi = efi_system_table.acpi_table().expect("ACPI table not found");
 
     let memory_map = init_basic_runtime(image_handle, efi_system_table);
-    let mut total_memory_pages = 0;
-    for e in memory_map.iter() {
-        if e.memory_type() != EfiMemoryType::CONVENTIONAL_MEMORY {
-            continue;
-        }
-        total_memory_pages += e.number_of_pages();
-        writeln!(w, "{e:?}").unwrap();
-    }
-    let total_memory_size_mib = total_memory_pages * 4096 / 1024 / 1024;
-    writeln!(
-        w,
-        "Total: {total_memory_pages} pages = {total_memory_size_mib} MiB"
-    )
-    .unwrap();
 
     writeln!(w, "Hello, Non-EFI World!").unwrap();
-
-    let cr3 = wasabi::x86::read_cr3();
-    println!("cr3 = {cr3:#p}");
-
-    let t = Some(unsafe { &*cr3 });
-    println!("{t:?}");
-    let t = t.and_then(|t| t.next_level(0));
-    println!("{t:?}");
-    let t = t.and_then(|t| t.next_level(0));
-    println!("{t:?}");
-    let t = t.and_then(|t| t.next_level(0));
-    println!("{t:?}");
+    init_allocator(&memory_map);
 
     let (_gdt, _idt) = init_exceptions();
-    info!("Exception initialized.");
-    trigger_debug_interrupt();
-    info!("Execution continued after debug interrupt.");
-
     init_paging(&memory_map);
-    info!("Now we are using our own page tables!");
-
-    let page_table = read_cr3();
-    unsafe {
-        (*page_table)
-            .create_mapping(0, 4096, 0, PageAttr::NotPresent)
-            .expect("Failded to unmap page 0");
-    }
-    flush_tlb();
 
     // 電源管理インターフェースからhpet取得
     init_hpet(acpi);
