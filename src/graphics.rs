@@ -210,13 +210,13 @@ pub fn draw_test_pattern<T: Bitmap>(buf: &mut T) {
     draw_str_fg(buf, left, h * colors.len() as i64 + 16, 0x00ff00, "ABCDEF");
 }
 
-pub struct BitmapTextWriter<'a, T> {
-    buf: &'a mut T,
+pub struct BitmapTextWriter<T> {
+    buf: T,
     cursor_X: i64,
     cursor_Y: i64,
 }
-impl<'a, T: Bitmap> BitmapTextWriter<'a, T> {
-    pub fn new(buf: &'a mut T) -> Self {
+impl<T: Bitmap> BitmapTextWriter<T> {
+    pub fn new(buf: T) -> Self {
         Self {
             buf,
             cursor_X: 0,
@@ -224,7 +224,7 @@ impl<'a, T: Bitmap> BitmapTextWriter<'a, T> {
         }
     }
 }
-impl<'a, T: Bitmap> fmt::Write for BitmapTextWriter<'a, T> {
+impl<T: Bitmap> fmt::Write for BitmapTextWriter<T> {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for c in s.chars() {
             if c == '\n' {
@@ -232,7 +232,13 @@ impl<'a, T: Bitmap> fmt::Write for BitmapTextWriter<'a, T> {
                 self.cursor_X = 0;
                 continue;
             }
-            draw_font_fg(self.buf, self.cursor_X, self.cursor_Y, 0xffffff, c);
+            draw_font_fg(
+                &mut self.buf,
+                self.cursor_X,
+                self.cursor_Y,
+                0xffffff,
+                c,
+            );
             self.cursor_X += 8;
         }
         Ok(())

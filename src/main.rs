@@ -16,6 +16,7 @@ use wasabi::init::init_basic_runtime;
 use wasabi::init::init_display;
 use wasabi::init::init_hpet;
 use wasabi::init::init_paging;
+use wasabi::print::set_global_vram;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
 use wasabi::uefi::locate_loaded_image_protocol;
@@ -42,12 +43,14 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     // vram初期化
     init_display(&mut vram);
 
-    let mut w = BitmapTextWriter::new(&mut vram);
+    // vramにグローバルに排他的にアクセスできるようにする
+    set_global_vram(vram);
+
     let acpi = efi_system_table.acpi_table().expect("ACPI table not found");
 
     let memory_map = init_basic_runtime(image_handle, efi_system_table);
 
-    writeln!(w, "Hello, Non-EFI World!").unwrap();
+    info!("Hello, Non-EFI World!");
     init_allocator(&memory_map);
 
     let (_gdt, _idt) = init_exceptions();

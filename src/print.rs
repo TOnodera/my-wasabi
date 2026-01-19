@@ -1,11 +1,26 @@
 use crate::print;
 use crate::serial::SerialPort;
+use core::alloc::GlobalAlloc;
 use core::mem::size_of;
 use core::{fmt, slice};
+use crate::graphics::BitmapTextWriter;
+use crate::mutex::Mutex;
+use crate::uefi::VramBufferInfo;
+
+static GLOBAL_VRAM_WRITER: Mutex<Option<BitmapTextWriter<VramBufferInfo>>> = Mutex::new(None);
+
+pub fn set_global_vram(vram: VramBufferInfo) {
+    assert!(GLOBAL_VRAM_WRITER.lock().is_none());
+    let w = BitmapTextWriter::new(vram);
+    *GLOBAL_VRAM_WRITER.lock() = Some(w)
+}
 
 pub fn global_print(args: fmt::Arguments) {
     let mut writer = SerialPort::default();
     fmt::write(&mut writer, args).unwrap();
+    if let Some(w) = &mut *GLOBAL_VRAM_WRITER.lock() {
+        fmt::write(w, args).expect("Failed to write to GLOBAL_VRAM_WRITER");
+    }
 }
 
 #[macro_export]
