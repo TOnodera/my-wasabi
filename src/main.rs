@@ -11,9 +11,8 @@ use wasabi::executor::Task;
 use wasabi::executor::TimeoutFuture;
 use wasabi::graphics::{draw_test_pattern, fill_rect, Bitmap};
 use wasabi::hpet::global_timestamp;
-use wasabi::hpet::set_global_hpet;
-use wasabi::hpet::Hpet;
 use wasabi::init::init_basic_runtime;
+use wasabi::init::init_hpet;
 use wasabi::init::init_paging;
 use wasabi::qemu::exit_qemu;
 use wasabi::qemu::QemuExitCode;
@@ -95,11 +94,9 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     }
     flush_tlb();
 
-    let hpet = acpi.hpet().expect("Failed to get HPET from ACPI");
-    let hpet = hpet.base_address().expect("faild to find baseaddress.");
-    info!("HPET is at {hpet:#p}");
-    let hpet = Hpet::new(hpet);
-    set_global_hpet(hpet);
+    // 電源管理インターフェースからhpet取得
+    init_hpet(acpi);
+
     let t0 = global_timestamp();
     let task1 = Task::new(async move {
         for i in 100..=103 {
