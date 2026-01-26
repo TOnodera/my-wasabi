@@ -1,7 +1,16 @@
+use crate::result::Result;
 use crate::x86::busy_loop_hint;
 use crate::x86::read_io_port_u8;
 use crate::x86::write_io_port_u8;
 use core::fmt;
+
+/// 今回使用するシリアルポートの各レジスタのオフセット
+/// +0: 受信バッファ(Read) / 送信バッファ(Write)
+/// +1: 割り込みの設定
+/// +2: バッファの設定
+/// +3: ボーレート(通信速度)やデータ形式の設定
+/// +4: モデムの設定
+/// +5: モデムの状態
 
 pub struct SerialPort {
     base: u16,
@@ -25,6 +34,17 @@ impl SerialPort {
         write_io_port_u8(self.base + 2, 0xC7);
         write_io_port_u8(self.base + 4, 0x0B);
     }
+    pub fn loopback_test(&self) -> Result<()> {
+        // ループバックモードの場合
+        write_io_port_u8(self.base + 4, 0x1e); // 0x1eでループバックモード
+        self.send_char('T');
+        if self.try_read().ok_or("lookback_test failed: Noresponse")? != b'T' {
+            return Err("lookback_test failed: wrong data received");
+        }
+        // 通常モードの場合
+        write_io_port_u8(self.base + 4, 0x0f); // 通常モード
+        Ok(())
+    }
     pub fn send_char(&self, c: char) {
         while (read_io_port_u8(self.base + 5) & 0x20) == 0 {
             busy_loop_hint();
@@ -36,6 +56,15 @@ impl SerialPort {
         let slen = s.chars().count();
         for _ in 0..slen {
             self.send_char(sc.next().unwrap());
+        }
+    }
+    pub fn try_read(&self) -> Option<u8> {
+        if read_io_port_u8(self.base + 5) & 0x01 == 0 {
+            None
+        } else {
+            let c = read_io_port_u8(self.base);
+            write_io_port_u8(self.base + 2, 0xc7);
+            Some(c)
         }
     }
 }
