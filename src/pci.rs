@@ -16,7 +16,7 @@ impl VendorDeviceId {
     pub fn fmt_common(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "(vendor: {:#06X}, device: {:#06X}",
+            "(vendor: {:#06X}, device: {:#06X})",
             self.vendor, self.device
         )
     }
@@ -117,6 +117,50 @@ impl<T> ConfigureRegisters<T> {
         } else {
             unsafe {
                 Ok(read_volatile(ecm_base.add(byte_offset / size_of::<T>())))
+            }
+        }
+    }
+}
+
+pub struct Pci {
+    ecm_range: Range<usize>,
+}
+impl Pci {
+    pub fn new(mcfg: &AcpiMcfgDescriptor) -> Self {
+        assert!(mcfg.num_of_entries() == 1);
+        let pci_config_space_base =
+            mcfg.entry(0).expect("Out of range").base_address() as usize;
+        let pci_config_space_end = pci_config_space_base + (1 << 24);
+        Self {
+            ecm_range: pci_config_space_base..pci_config_space_end,
+        }
+    }
+    pub fn ecm_base<T>(&self, id: BusDeviceFunction) -> *mut T {
+        (self.ecm_range.start + ((id.id as usize) << 12)) as *mut T
+    }
+    pub fn read_register_u16(
+        &self,
+        bdf: BusDeviceFunction,
+        byte_offset: usize,
+    ) -> Result<u16> {
+        ConfigureRegisters::read(self.ecm_base(bdf), byte_offset)
+    }
+    pub fn read_vendor_id_and_device_id(
+        &self,
+        id: BusDeviceFunction,
+    ) -> Option<VendorDeviceId> {
+        let vendor = self.read_register_u16(id, 0).ok()?;
+        let device = self.read_register_u16(id, 2).ok()?;
+        if vendor == 0xFFFF || device == 0xFFFF {
+            None
+        } else {
+            Some(VendorDeviceId { vendor, device })
+        }
+    }
+    pub fn probe_devices(&self) {
+        for bdf in BusDeviceFunction::iter() {
+            if let Some(vd) = self.read_vendor_id_and_device_id(bdf) {
+                info!("{vd}");
             }
         }
     }
