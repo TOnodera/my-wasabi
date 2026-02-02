@@ -78,11 +78,11 @@ pub enum TranslationResult {
 }
 
 #[repr(transparent)]
-pub struct Entry<const LEVEL: usize, const SHIFT: usize, Next> {
+pub struct Entry<const LEVEL: usize, Next> {
     value: u64,
     _marker: PhantomData<Next>,
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
+impl<const LEVEL: usize, NEXT> Entry<LEVEL, NEXT> {
     fn read_value(&self) -> u64 {
         self.value
     }
@@ -147,15 +147,15 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
         }
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Display
-    for Entry<LEVEL, SHIFT, NEXT>
+impl<const LEVEL: usize, NEXT> fmt::Display
+    for Entry<LEVEL, NEXT>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
-    for Entry<LEVEL, SHIFT, NEXT>
+impl<const LEVEL: usize, NEXT> fmt::Debug
+    for Entry<LEVEL, NEXT>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
@@ -163,10 +163,10 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
 }
 
 #[repr(align(4096))]
-pub struct Tabel<const LEVEL: usize, const SHIFT: usize, NEXT> {
-    entry: [Entry<LEVEL, SHIFT, NEXT>; 512],
+pub struct Tabel<const LEVEL: usize, NEXT> {
+    entry: [Entry<LEVEL, NEXT>; 512],
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
+impl<const LEVEL: usize, NEXT> Tabel<LEVEL, NEXT> {
     fn format(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "L{}TABLE @ {:#p} {{", LEVEL, self)?;
         for i in 0..512 {
@@ -181,22 +181,25 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
     pub fn next_level(&self, index: usize) -> Option<&NEXT> {
         self.entry.get(index).and_then(|e| e.table().ok())
     }
+    const fn index_shift() -> usize {
+        (LEVEL - 1) * 9 + 12
+    }
     fn calc_index(&self, addr: u64) -> usize{
-        ((addr >> SHIFT) & 0b1_1111_1111) as usize
+        ((addr >> Self::index_shift()) & 0b1_1111_1111) as usize
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
-    for Tabel<LEVEL, SHIFT, NEXT>
+impl<const LEVEL: usize, NEXT: fmt::Debug> fmt::Debug
+    for Tabel<LEVEL, NEXT>
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
     }
 }
 
-pub type PT = Tabel<1, 12, [u8; PAGE_SIZE]>;
-pub type PD = Tabel<2, 21, PT>;
-pub type PDPT = Tabel<3, 30, PD>;
-pub type PML4 = Tabel<4, 39, PDPT>;
+pub type PT = Tabel<1, [u8; PAGE_SIZE]>;
+pub type PD = Tabel<2, PT>;
+pub type PDPT = Tabel<3,PD>;
+pub type PML4 = Tabel<4, PDPT>;
 
 impl PML4 {
     pub fn new() -> Box<Self> {
