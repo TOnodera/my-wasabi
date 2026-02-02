@@ -1,5 +1,6 @@
 #![feature(sync_unsafe_cell)]
 #![feature(const_location_fields)]
+#![feature(option_get_or_insert_default)]
 #![feature(const_caller_location)]
 #![no_std]
 #![feature(offset_of)]
