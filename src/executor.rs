@@ -63,20 +63,6 @@ fn no_op_waker() -> Waker {
     unsafe { Waker::from_raw(no_op_raw_waker()) }
 }
 
-pub fn block_on<T>(
-    future: impl Future<Output = Result<T>> + 'static,
-) -> Result<T> {
-    let mut task = Task::new(future);
-    loop {
-        let waker = no_op_waker();
-        let mut context = Context::from_waker(&waker);
-        match task.poll(&mut context) {
-            Poll::Ready(result) => return result,
-            Poll::Pending => busy_loop_hint(),
-        }
-    }
-}
-
 pub struct Executor {
     task_queue: Option<VecDeque<Task<()>>>,
 }
@@ -98,7 +84,9 @@ impl Executor {
         loop {
             let task =
                 executor.lock().as_mut().map(|e| e.task_queue().pop_front());
+            info!("task is {:?}", task);
             if let Some(Some(mut task)) = task {
+                info!("task is poped..");
                 let waker = no_op_waker();
                 let mut context = Context::from_waker(&waker);
                 match task.poll(&mut context) {
@@ -106,6 +94,7 @@ impl Executor {
                         info!("Task completed: {:?}: {:?}", task, result);
                     }
                     Poll::Pending => {
+                        info!("task is pendding...");
                         if let Some(e) = executor.lock().as_mut() {
                             e.task_queue().push_back(task);
                         }
@@ -148,6 +137,7 @@ struct TimeoutFuture {
 }
 impl TimeoutFuture {
     fn new(duration: Duration) -> Self {
+        info!("TimeoutFuture::new()");
         Self {
             time_out: global_timestamp() + duration,
         }
