@@ -65,15 +65,21 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
     let t0 = global_timestamp();
     let task1 = async move {
         for i in 100..=103 {
-            info!("{i} hpet.main_counter = {:?}", global_timestamp() - t0);
+            info!(
+                "task1: {i} hpet.main_counter = {:?}",
+                global_timestamp() - t0
+            );
             sleep(Duration::from_secs(1)).await;
         }
         Ok(())
     };
     let task2 = async move {
         for i in 200..=203 {
-            info!("{i} hpet.main_counter = {:?}", global_timestamp() - t0);
-            sleep(Duration::from_secs(3)).await;
+            info!(
+                "task2: {i} hpet.main_counter = {:?}",
+                global_timestamp() - t0
+            );
+            sleep(Duration::from_secs(2)).await;
         }
         Ok(())
     };
@@ -84,7 +90,6 @@ fn efi_main(image_handle: EfiHandle, efi_system_table: &EfiSystemTable) {
             error!("{e:?}");
             return Err("serial: loopback test failed");
         }
-        info!("Started to monitor serial port");
         loop {
             if let Some(v) = sp.try_read() {
                 let c = char::from_u32(v as u32);

@@ -84,9 +84,7 @@ impl Executor {
         loop {
             let task =
                 executor.lock().as_mut().map(|e| e.task_queue().pop_front());
-            info!("task is {:?}", task);
             if let Some(Some(mut task)) = task {
-                info!("task is poped..");
                 let waker = no_op_waker();
                 let mut context = Context::from_waker(&waker);
                 match task.poll(&mut context) {
@@ -94,7 +92,6 @@ impl Executor {
                         info!("Task completed: {:?}: {:?}", task, result);
                     }
                     Poll::Pending => {
-                        info!("task is pendding...");
                         if let Some(e) = executor.lock().as_mut() {
                             e.task_queue().push_back(task);
                         }
@@ -137,7 +134,6 @@ struct TimeoutFuture {
 }
 impl TimeoutFuture {
     fn new(duration: Duration) -> Self {
-        info!("TimeoutFuture::new()");
         Self {
             time_out: global_timestamp() + duration,
         }
@@ -146,11 +142,6 @@ impl TimeoutFuture {
 impl Future for TimeoutFuture {
     type Output = ();
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        info!(
-            "timeout: {:?}, global_timestamp: {:?}",
-            self.time_out,
-            global_timestamp()
-        );
         if self.time_out < global_timestamp() {
             Poll::Ready(())
         } else {
