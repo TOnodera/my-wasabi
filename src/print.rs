@@ -1,13 +1,14 @@
+use crate::graphics::BitmapTextWriter;
+use crate::mutex::Mutex;
 use crate::print;
 use crate::serial::SerialPort;
+use crate::uefi::VramBufferInfo;
 use core::alloc::GlobalAlloc;
 use core::mem::size_of;
 use core::{fmt, slice};
-use crate::graphics::BitmapTextWriter;
-use crate::mutex::Mutex;
-use crate::uefi::VramBufferInfo;
 
-static GLOBAL_VRAM_WRITER: Mutex<Option<BitmapTextWriter<VramBufferInfo>>> = Mutex::new(None);
+static GLOBAL_VRAM_WRITER: Mutex<Option<BitmapTextWriter<VramBufferInfo>>> =
+    Mutex::new(None);
 
 pub fn set_global_vram(vram: VramBufferInfo) {
     assert!(GLOBAL_VRAM_WRITER.lock().is_none());
