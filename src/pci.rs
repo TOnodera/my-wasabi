@@ -124,7 +124,7 @@ impl<T> ConfigureRegisters<T> {
         }
     }
     fn write(ecm_base: *mut T, byte_offset: usize, data: T) -> Result<()> {
-        if (0..256).contains(&byte_offset) || byte_offset % size_of::<T>() != 0
+        if !(0..256).contains(&byte_offset) || byte_offset % size_of::<T>() != 0
         {
             Err("PCI ConfigRegisters write out of range")
         } else {
