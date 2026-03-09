@@ -2,6 +2,7 @@
 #![feature(const_location_fields)]
 #![feature(option_get_or_insert_default)]
 #![feature(const_caller_location)]
+#![feature(str_internals)]
 #![no_std]
 #![feature(offset_of)]
 #![feature(custom_test_frameworks)]

@@ -24,9 +24,9 @@ fn extract_bits_tests() {
     assert_eq!(
         extract_bits(0x1234_5678_1234_5678u64, 0, 64),
         0x1234_5678_1234_5678u64
-    )
+    );
     assert_eq!(
         extract_bits(0x1234_5678_1234_5678u64, 0, 65),
         0x1234_5678_1234_5678u64
-    )
+    );
 }
