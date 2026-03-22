@@ -15,6 +15,7 @@ use core::mem::size_of_val;
 use core::mem::MaybeUninit;
 use core::panic;
 use core::pin::Pin;
+use core::mem::ManuallyDrop;
 
 pub fn hlt() {
     unsafe { asm!("hlt") }
@@ -78,11 +79,11 @@ pub enum TranslationResult {
 }
 
 #[repr(transparent)]
-pub struct Entry<const LEVEL: usize, const SHIFT: usize, Next> {
+pub struct Entry<const LEVEL: usize, Next> {
     value: u64,
     _marker: PhantomData<Next>,
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
+impl<const LEVEL: usize, NEXT> Entry<LEVEL, NEXT> {
     fn read_value(&self) -> u64 {
         self.value
     }
@@ -126,7 +127,7 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
     fn set_page(&mut self, phys: u64, attr: PageAttr) -> Result<()> {
         if phys & ATTR_MASK != 0 {
             return Err("Physical address is not aligned.");
-        } 
+        }
         self.value = phys | (attr as u64);
         Ok(())
     }
@@ -135,8 +136,10 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
             error!("Page is already populated.");
             return Err("Page is already populated.");
         }
-        let next: Box<NEXT> = Box::new(unsafe { MaybeUninit::zeroed().assume_init() });
-        self.value = Box::into_raw(next) as u64 | PageAttr::ReadWriteKernel as u64;
+        let next: Box<NEXT> =
+            Box::new(unsafe { MaybeUninit::zeroed().assume_init() });
+        self.value =
+            Box::into_raw(next) as u64 | PageAttr::ReadWriteKernel as u64;
         Ok(self)
     }
     fn ensure_populated(&mut self) -> Result<&mut Self> {
@@ -147,26 +150,22 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Entry<LEVEL, SHIFT, NEXT> {
         }
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Display
-    for Entry<LEVEL, SHIFT, NEXT>
-{
+impl<const LEVEL: usize, NEXT> fmt::Display for Entry<LEVEL, NEXT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
-    for Entry<LEVEL, SHIFT, NEXT>
-{
+impl<const LEVEL: usize, NEXT> fmt::Debug for Entry<LEVEL, NEXT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
     }
 }
 
 #[repr(align(4096))]
-pub struct Tabel<const LEVEL: usize, const SHIFT: usize, NEXT> {
-    entry: [Entry<LEVEL, SHIFT, NEXT>; 512],
+pub struct Tabel<const LEVEL: usize, NEXT> {
+    entry: [Entry<LEVEL, NEXT>; 512],
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
+impl<const LEVEL: usize, NEXT> Tabel<LEVEL, NEXT> {
     fn format(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "L{}TABLE @ {:#p} {{", LEVEL, self)?;
         for i in 0..512 {
@@ -181,22 +180,23 @@ impl<const LEVEL: usize, const SHIFT: usize, NEXT> Tabel<LEVEL, SHIFT, NEXT> {
     pub fn next_level(&self, index: usize) -> Option<&NEXT> {
         self.entry.get(index).and_then(|e| e.table().ok())
     }
-    fn calc_index(&self, addr: u64) -> usize{
-        ((addr >> SHIFT) & 0b1_1111_1111) as usize
+    const fn index_shift() -> usize {
+        (LEVEL - 1) * 9 + 12
+    }
+    fn calc_index(&self, addr: u64) -> usize {
+        ((addr >> Self::index_shift()) & 0b1_1111_1111) as usize
     }
 }
-impl<const LEVEL: usize, const SHIFT: usize, NEXT> fmt::Debug
-    for Tabel<LEVEL, SHIFT, NEXT>
-{
+impl<const LEVEL: usize, NEXT: fmt::Debug> fmt::Debug for Tabel<LEVEL, NEXT> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.format(f)
     }
 }
 
-pub type PT = Tabel<1, 12, [u8; PAGE_SIZE]>;
-pub type PD = Tabel<2, 21, PT>;
-pub type PDPT = Tabel<3, 30, PD>;
-pub type PML4 = Tabel<4, 39, PDPT>;
+pub type PT = Tabel<1, [u8; PAGE_SIZE]>;
+pub type PD = Tabel<2, PT>;
+pub type PDPT = Tabel<3, PD>;
+pub type PML4 = Tabel<4, PDPT>;
 
 impl PML4 {
     pub fn new() -> Box<Self> {
@@ -205,29 +205,47 @@ impl PML4 {
     fn default() -> Self {
         unsafe { MaybeUninit::zeroed().assume_init() }
     }
-    pub fn create_mapping(&mut self, virt_start: u64, virt_end: u64, phys: u64, attr: PageAttr) -> Result<()>{
-        if virt_start & ATTR_MASK != 0 {
-            error!("Invalid virtual start address.");
-            return Err("Invalid virtual start address.");
-        }
-        if virt_end & ATTR_MASK != 0 {
-            error!("Invalid virtual end address.");
-            return Err("Invalid virtual end address.");
-        }
-        if phys & ATTR_MASK != 0 {
-            error!("Invalid physical address.");
-            return Err("Invalid physical address.");
-        }
-        for addr in (virt_start..virt_end).step_by(PAGE_SIZE) {
-            let index = self.calc_index(addr);
-            let table = self.entry[index].ensure_populated()?.table_mut()?;
+    pub fn create_mapping(
+        &mut self,
+        virt_start: u64,
+        virt_end: u64,
+        phys: u64,
+        attr: PageAttr,
+    ) -> Result<()> {
+        let table = self;
+        let mut addr = virt_start;
+        loop {
             let index = table.calc_index(addr);
             let table = table.entry[index].ensure_populated()?.table_mut()?;
-            let index = table.calc_index(addr);
-            let table = table.entry[index].ensure_populated()?.table_mut()?;
-            let index = table.calc_index(addr);
-            let pte = &mut table.entry[index];
-            pte.set_page(phys + (addr - virt_start), attr)?;
+            loop {
+                let index = table.calc_index(addr);
+                let table =
+                    table.entry[index].ensure_populated()?.table_mut()?;
+                loop {
+                    let index = table.calc_index(addr);
+                    let table =
+                        table.entry[index].ensure_populated()?.table_mut()?;
+                    loop {
+                        let index = table.calc_index(addr);
+                        let pte = &mut table.entry[index];
+                        let phys_addr = phys + addr - virt_start;
+                        pte.set_page(phys_addr, attr)?;
+                        addr = addr.wrapping_add(PAGE_SIZE as u64);
+                        if index + 1 >= (1 << 9) || addr >= virt_end {
+                            break;
+                        }
+                    }
+                    if index + 1 >= (1 << 9) || addr >= virt_end {
+                        break;
+                    }
+                }
+                if index + 1 >= (1 << 9) || addr >= virt_end {
+                    break;
+                }
+            }
+            if index + 1 >= (1 << 9) || addr >= virt_end {
+                break;
+            }
         }
         Ok(())
     }
@@ -246,7 +264,7 @@ pub unsafe fn write_cs(cs: u16) {
     asm!(
         // ripレジスタには実行される命令のアドレスが入ってる。2fは2つ後の命令の意味
         // 戻ってきたときに実行する命令を汎用レジスタに保存
-        // 
+        //
         "lea rax, [rip + 2f]",
         // CS(コードセグメント)をスタックに積む
         "push cx",
@@ -338,8 +356,9 @@ const _: () = assert!(size_of::<InterruptInfo>() == (16 + 4 + 1) * 8 + 8 + 512);
 
 impl fmt::Debug for InterruptInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-        "
+        write!(
+            f,
+            "
         {{
             rip: {:#018X}, cs: {:#06X},
             rsp: {:#018X}, ss: {:#06X},
@@ -356,37 +375,38 @@ impl fmt::Debug for InterruptInfo {
             r12: {:#018X}, r13: {:#018X},
             r14: {:#018X}, r15: {:#018X},
         }}",
-        self.ctx.rip, 
-        self.ctx.cs,
-        self.ctx.rsp, 
-        self.ctx.ss,
-        self.greg.rbp, 
-        self.ctx.rflags,
-        self.error_code,
-        //
-        self.greg.rax,
-        self.greg.rcx,
-        self.greg.rdx,
-        self.greg.rbx,
-        //
-        self.greg.rsi,
-        self.greg.rdi,
-        //
-        self.greg.r8,
-        self.greg.r9,
-        self.greg.r10,
-        self.greg.r11,
-        self.greg.r12,
-        self.greg.r13,
-        self.greg.r14,
-        self.greg.r15
+            self.ctx.rip,
+            self.ctx.cs,
+            self.ctx.rsp,
+            self.ctx.ss,
+            self.greg.rbp,
+            self.ctx.rflags,
+            self.error_code,
+            //
+            self.greg.rax,
+            self.greg.rcx,
+            self.greg.rdx,
+            self.greg.rbx,
+            //
+            self.greg.rsi,
+            self.greg.rdi,
+            //
+            self.greg.r8,
+            self.greg.r9,
+            self.greg.r10,
+            self.greg.r11,
+            self.greg.r12,
+            self.greg.r13,
+            self.greg.r14,
+            self.greg.r15
         )
     }
 }
 
 /// 割り込み番号ごとのエントリポイントを生成するマクロ
 /// $index: 割り込み番号
-/// x86_64の割り込みABIに沿ってエラーコード・割り込み番号を添えて共通ハンドラにジャンプ
+/// x86_64の割り込みABIに沿ってエラーコード・
+/// 割り込み番号を添えて共通ハンドラにジャンプ
 macro_rules! interrupt_entrypoint {
     ($index:literal) => {
         global_asm!(concat!(
@@ -403,24 +423,24 @@ macro_rules! interrupt_entrypoint {
             "\n",
             "jmp inthandler_common"
         ));
-    }
+    };
 }
 
 macro_rules! interrupt_entrypoint_with_ecode {
     ($index:literal) => {
         global_asm!(concat!(
-                ".global interrupt_entrypoint",
-                stringify!($index),
-                "\n",
-                "interrupt_entrypoint",
-                stringify!($index),
-                ":\n",
-                "push rcx \n",
-                "mov rcx, ",
-                stringify!($index),
-                "\n",
-                "jmp inthandler_common"
-        )); 
+            ".global interrupt_entrypoint",
+            stringify!($index),
+            "\n",
+            "interrupt_entrypoint",
+            stringify!($index),
+            ":\n",
+            "push rcx \n",
+            "mov rcx, ",
+            stringify!($index),
+            "\n",
+            "jmp inthandler_common"
+        ));
     };
 }
 
@@ -523,31 +543,33 @@ pub fn read_cr2() -> u64 {
 }
 
 #[no_mangle]
-extern  "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
+extern "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
     error!("Interrupt Info: {:?}", info);
     error!("Exception {index:#04X}: ");
 
     match index {
         3 => {
-            error!("Breakpoint Exception"); 
+            error!("Breakpoint Exception");
             return;
-        },
+        }
         6 => error!("Invalid Opcode Exception"),
         8 => error!("Double Fault Exception"),
-        13 =>{ error!("General Protection Fault");
+        13 => {
+            error!("General Protection Fault");
             let rip = info.ctx.rip;
             error!("Bytes @ RIP({rip:#018X}): ");
             let rip = rip as *const u8;
             let bytes = unsafe { core::slice::from_raw_parts(rip, 16) };
             error!(" = {bytes:02X?}");
-    },
+        }
         14 => {
             error!("Page Fault Exception");
             error!("CR2 = {:#018X}", read_cr2());
-            error!("Caused by: A {} mode {} on a {} page, page structures are {}",
+            error!(
+                "Caused by: A {} mode {} on a {} page, page structures are {}",
                 if info.error_code & 0b0000_0100 != 0 {
                     "user"
-                } else { 
+                } else {
                     "supervisor"
                 },
                 if info.error_code & 0b0001_0000 != 0 {
@@ -562,7 +584,7 @@ extern  "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
                 } else {
                     "non-present"
                 },
-                if info.error_code & 0b1000 != 0{
+                if info.error_code & 0b1000 != 0 {
                     "invalid"
                 } else {
                     "valid"
@@ -575,7 +597,7 @@ extern  "sysv64" fn inthandler(info: &InterruptInfo, index: usize) {
 }
 
 #[no_mangle]
-extern  "sysv64" fn int_handler_unimplemented() {
+extern "sysv64" fn int_handler_unimplemented() {
     panic!("unexpected interrupt");
 }
 
@@ -588,7 +610,7 @@ pub const BIT_FLAGS_DPL3: u8 = 3 << 5;
 
 #[repr(u8)]
 #[derive(Clone, Copy)]
-enum IdtAttr{
+enum IdtAttr {
     _NotPresent = 0,
     IntGateDPL0 = BIT_FLAGS_INTGATE | BIT_FLAGS_DPL0 | BIT_FLAGS_PRESENT,
     IntGateDPL3 = BIT_FLAGS_INTGATE | BIT_FLAGS_DPL3 | BIT_FLAGS_PRESENT,
@@ -606,7 +628,7 @@ pub struct IdtDescriptor {
     offset_hight: u32,
     _reserved: u32,
 }
-const _ : () = assert!(size_of::<IdtDescriptor>() == 16);
+const _: () = assert!(size_of::<IdtDescriptor>() == 16);
 impl IdtDescriptor {
     fn new(
         segment_selector: u16,
@@ -640,11 +662,9 @@ const _: () = assert!(offset_of!(IdtrParameters, base) == 2);
 pub struct Idt {
     #[allow(dead_code)]
     entries: Pin<Box<[IdtDescriptor; 0x100]>>,
-} 
+}
 impl Idt {
-   pub fn new(
-    segment_selector: u16,
-   )  -> Self {
+    pub fn new(segment_selector: u16) -> Self {
         let mut entries = [IdtDescriptor::new(
             segment_selector,
             1,
@@ -665,7 +685,7 @@ impl Idt {
         );
         entries[8] = IdtDescriptor::new(
             segment_selector,
-            2, // IST 2 を使用
+            2,                    // IST 2 を使用
             IdtAttr::IntGateDPL0, // カーネルモード
             interrupt_entrypoint8,
         );
@@ -691,14 +711,12 @@ impl Idt {
         let entries = Box::pin(entries);
         let params = IdtrParameters {
             limit,
-            base: entries.as_ptr()
+            base: entries.as_ptr(),
         };
         unsafe {
             asm!("lidt [rcx]", in("rcx") &params);
         };
-        Self {
-            entries 
-        }
+        Self { entries }
     }
 }
 
@@ -723,9 +741,7 @@ impl TaskStateSegment64 {
         const HANDLER_STACK_SIZE: usize = 64 * 1024;
         let stack = Box::new([0u8; HANDLER_STACK_SIZE]);
         // スタックの先頭アドレスを返す
-        let rsp = unsafe {
-            stack.as_ptr().add(HANDLER_STACK_SIZE) as u64
-        };
+        let rsp = unsafe { stack.as_ptr().add(HANDLER_STACK_SIZE) as u64 };
         core::mem::forget(stack);
         rsp
     }
@@ -769,7 +785,8 @@ pub fn init_exceptions() -> (GdtWrapper, Idt) {
         write_es(KERNEL_DS);
         // データセグメント(歴史的経緯で互換性の為に存在)
         write_ds(KERNEL_DS);
-        // 汎用セグメント(TSLスレッドローカル, スレッド固有データへの高速アクセス)
+        // 汎用セグメント(TSLスレッドローカル,
+        // スレッド固有データへの高速アクセス)
         write_fs(KERNEL_DS);
         // 汎用セグメント(per-CPU/カーネル用)
         write_gs(KERNEL_DS);
@@ -790,10 +807,9 @@ pub const BIT_DPL3: u64 = 3u64 << 45;
 
 #[repr(u64)]
 enum GdtAttr {
-    KernelCode = 
-        BIT_TYPE_CODE | BIT_PRESENT | BIT_CS_LONG_MODE | BIT_CS_READABLE ,
-    KernelData = 
-        BIT_TYPE_DATA | BIT_PRESENT | BIT_DS_WRITABLE,
+    KernelCode =
+        BIT_TYPE_CODE | BIT_PRESENT | BIT_CS_LONG_MODE | BIT_CS_READABLE,
+    KernelData = BIT_TYPE_DATA | BIT_PRESENT | BIT_DS_WRITABLE,
 }
 
 #[allow(dead_code)]
@@ -803,9 +819,9 @@ struct GdtrParameters {
     base: *const Gdt,
 }
 
-pub const KERNEL_CS : u16 = 1 << 3;
-pub const KERNEL_DS : u16 = 2 << 3;
-pub const TSS64_SEL : u16 = 3 << 3;
+pub const KERNEL_CS: u16 = 1 << 3;
+pub const KERNEL_DS: u16 = 2 << 3;
+pub const TSS64_SEL: u16 = 3 << 3;
 
 #[allow(dead_code)]
 #[repr(C, packed)]
@@ -815,7 +831,7 @@ pub struct Gdt {
     kernel_data_segment: GdtSegmentDescriptor,
     task_state_segment: TaskStateSegment64Descriptor,
 }
-const _ :() = assert!(size_of::<Gdt>() == 40);
+const _: () = assert!(size_of::<Gdt>() == 40);
 
 #[allow(dead_code)]
 pub struct GdtWrapper {
@@ -824,9 +840,8 @@ pub struct GdtWrapper {
 }
 
 impl GdtWrapper {
-    pub fn load(&self)
-    {
-        let params = GdtrParameters{
+    pub fn load(&self) {
+        let params = GdtrParameters {
             limit: (size_of::<Gdt>() - 1) as u16,
             base: self.inner.as_ref().get_ref() as *const Gdt,
         };
@@ -835,12 +850,11 @@ impl GdtWrapper {
             // 役割：GDTR（GDT レジスタ）に GDT の情報をロード
             // いつ使う？：ブート時 / カーネル初期化時
             // 権限：特権命令（ring 0）
-            // 
+            //
             // 汎用レジスタ RCX に GDT の情報を指すポインタをセットし、
             // LGDT 命令で GDTR にロードする。
             // csxにはGdtrPrameters構造体のアドレスが入っている
             asm!("lgdt [rcx]", in("rcx") &params);
-
 
             // 命令名：LTR (Load Task Register)
             // 役割：TR（タスクレジスタ）に TSS セグメントセレクタをロード
@@ -849,7 +863,6 @@ impl GdtWrapper {
             // 汎用レジスタ AX に TSS セグメントセレクタをセットし、
             // LTR 命令で TR にロードする。
             asm!("ltr cx", in("cx") TSS64_SEL);
-
         };
     }
 }
@@ -860,7 +873,9 @@ impl Default for GdtWrapper {
             null_segment: GdtSegmentDescriptor::null(),
             kernel_code_segment: GdtSegmentDescriptor::new(GdtAttr::KernelCode),
             kernel_data_segment: GdtSegmentDescriptor::new(GdtAttr::KernelData),
-            task_state_segment: TaskStateSegment64Descriptor::new(tss64.phys_addr()),
+            task_state_segment: TaskStateSegment64Descriptor::new(
+                tss64.phys_addr(),
+            ),
         };
         Self {
             inner: Box::pin(gdt),
@@ -879,7 +894,7 @@ impl GdtSegmentDescriptor {
     fn new(attr: GdtAttr) -> Self {
         Self { value: attr as u64 }
     }
-}   
+}
 impl Display for GdtSegmentDescriptor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:#018X}", self.value)
@@ -903,7 +918,7 @@ impl TaskStateSegment64Descriptor {
             limit_low: size_of::<TaskStateSegment64Inner>() as u16,
             base_low: (base_addr & 0xffff) as u16,
             base_mid_low: ((base_addr >> 16) & 0xff) as u8,
-            attr: 0b1000_0000_1000_0001, 
+            attr: 0b1000_0000_1000_0001,
             base_mid_hight: ((base_addr >> 24) & 0xff) as u8,
             base_high: ((base_addr >> 32) & 0xffffffff) as u32,
             reserved: 0,
@@ -923,8 +938,25 @@ pub unsafe fn write_cr3(table: *const PML4) {
     asm!("mov cr3, rax", in("rax") table)
 }
 
-pub fn flush_tlb(){
+pub fn flush_tlb() {
     unsafe {
-        write_cr3(read_cr3());  
+        write_cr3(read_cr3());
     }
 }
+
+pub unsafe fn take_current_page_table() -> ManuallyDrop<Box<PML4>> {
+    ManuallyDrop::new(Box::from_raw(read_cr3()))
+}
+
+pub unsafe fn put_current_page_table(mut table: ManuallyDrop<Box<PML4>>) {
+    write_cr3(Box::into_raw(ManuallyDrop::take(&mut table)));
+}
+
+pub unsafe fn with_current_page_table<F>(callback: F)
+where 
+    F: FnOnce(&mut PML4),
+    {
+        let mut table = take_current_page_table();
+        callback(&mut table);
+        put_current_page_table(table);
+    }
