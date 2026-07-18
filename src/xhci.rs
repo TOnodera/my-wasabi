@@ -165,7 +165,7 @@ impl OperationalRegisters {
             busy_loop_hint();
         }
         self.set_command_bits(Self::CMD_HC_RESET);
-        while self.usbcmd.read() & Self::CMD_HC_RESET == 0 {
+        while self.usbcmd.read() & Self::CMD_HC_RESET != 0 {
             busy_loop_hint();
         }
     }
